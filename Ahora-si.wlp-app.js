@@ -4597,7 +4597,7 @@ async function loadRuntime(runtime, options = {}) {
 
 // app.js
 var Constants = {
-  ProjectName: "Ahora si.wlp",
+  ProjectName: "Ahora-si.wlp",
   RuntimeBaseName: "WonderlandRuntime",
   WebXRRequiredFeatures: ["local"],
   WebXROptionalFeatures: ["local", "hand-tracking", "hit-test"]
@@ -4648,4 +4648,4 @@ try {
   console.error(e);
   window.alert(`Failed to load ${Constants.ProjectName}.bin:`, e);
 }
-//# sourceMappingURL=Ahora si.wlp-app.js.map
+//# sourceMappingURL=Ahora-si.wlp-app.js.map
