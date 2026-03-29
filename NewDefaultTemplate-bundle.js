@@ -8833,8 +8833,15 @@ var WasdControlsComponent = class extends Component3 {
   down = false;
   left = false;
   up = false;
+  _physx = null;
   start() {
     this.headObject = this.headObject || this.object;
+    this._physx = this.object.getComponent("physx");
+    if (!this._physx) {
+      console.warn("wasd-controls: no se encontr\xF3 componente physx en", this.object.name);
+    } else {
+      this._physx.angularVelocity = [0, 0, 0];
+    }
   }
   onActivate() {
     window.addEventListener("keydown", this.press);
@@ -8863,7 +8870,17 @@ var WasdControlsComponent = class extends Component3 {
       vec3_exports.normalize(_direction, _direction);
       vec3_exports.scale(_direction, _direction, this.speed);
     }
-    this.object.translateLocal(_direction);
+    if (this._physx) {
+      const currentVel = this._physx.linearVelocity;
+      this._physx.linearVelocity = [
+        _direction[0],
+        currentVel[1],
+        _direction[2]
+      ];
+      this._physx.angularVelocity = [0, 0, 0];
+    } else {
+      this.object.translateLocal(_direction);
+    }
   }
   press = (e) => {
     this.handleKey(e, true);
@@ -8872,20 +8889,19 @@ var WasdControlsComponent = class extends Component3 {
     this.handleKey(e, false);
   };
   handleKey(e, b) {
-    if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "KeyZ") {
+    if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "KeyZ")
       this.up = b;
-    } else if (e.code === "ArrowRight" || e.code === "KeyD") {
+    else if (e.code === "ArrowRight" || e.code === "KeyD")
       this.right = b;
-    } else if (e.code === "ArrowDown" || e.code === "KeyS") {
+    else if (e.code === "ArrowDown" || e.code === "KeyS")
       this.down = b;
-    } else if (e.code === "ArrowLeft" || e.code === "KeyA" || e.code === "KeyQ") {
+    else if (e.code === "ArrowLeft" || e.code === "KeyA" || e.code === "KeyQ")
       this.left = b;
-    }
   }
 };
 __publicField(WasdControlsComponent, "TypeName", "wasd-controls");
 __decorate17([
-  property.float(0.1)
+  property.float(10)
 ], WasdControlsComponent.prototype, "speed", void 0);
 __decorate17([
   property.bool(false)
