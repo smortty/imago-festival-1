@@ -8820,27 +8820,28 @@ var __decorate17 = function(decorators, target, key, desc) {
         r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
   return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
-var _direction = new Float32Array(3);
-var _tempDualQuat = new Float32Array(8);
+var _camRot = new Float32Array(4);
+var _vel = new Float32Array(3);
+var _pos = new Float32Array(3);
+var GROUND_DIST = 1.95;
+var GROUND_MASK = ~(1 << 4) & 255;
 var WasdControlsComponent = class extends Component3 {
-  /** Movement speed in m/s. */
   speed;
-  /** Flag for only moving the object on the global x & z planes */
+  jumpForce;
   lockY;
-  /** Object of which the orientation is used to determine forward direction */
   headObject;
   right = false;
   down = false;
   left = false;
   up = false;
+  jump = false;
   _physx = null;
+  _onGround = false;
   start() {
     this.headObject = this.headObject || this.object;
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
-      console.warn("wasd-controls: no se encontr\xF3 componente physx en", this.object.name);
-    } else {
-      this._physx.angularVelocity = [0, 0, 0];
+      console.warn("wasd-controls: no se encontr\xF3 physx en", this.object.name);
     }
   }
   onActivate() {
@@ -8851,36 +8852,52 @@ var WasdControlsComponent = class extends Component3 {
     window.removeEventListener("keydown", this.press);
     window.removeEventListener("keyup", this.release);
   }
-  update() {
-    vec3_exports.zero(_direction);
-    if (this.up)
-      _direction[2] -= 1;
-    if (this.down)
-      _direction[2] += 1;
-    if (this.left)
-      _direction[0] -= 1;
-    if (this.right)
-      _direction[0] += 1;
-    vec3_exports.normalize(_direction, _direction);
-    _direction[0] *= this.speed;
-    _direction[2] *= this.speed;
-    vec3_exports.transformQuat(_direction, _direction, this.headObject.getTransformWorld(_tempDualQuat));
-    if (this.lockY) {
-      _direction[1] = 0;
-      vec3_exports.normalize(_direction, _direction);
-      vec3_exports.scale(_direction, _direction, this.speed);
+  update(dt) {
+    if (!this._physx)
+      return;
+    this.object.getPositionWorld(_pos);
+    const hit = this.engine.physics.rayCast(
+      _pos,
+      [0, -1, 0],
+      GROUND_MASK,
+      GROUND_DIST
+    );
+    this._onGround = hit.hitCount > 0;
+    this._physx.getLinearVelocity(_vel);
+    const velY = _vel[1];
+    this.headObject.getRotationWorld(_camRot);
+    const cx = _camRot[0], cy = _camRot[1], cz = _camRot[2], cw = _camRot[3];
+    const yaw = Math.atan2(2 * (cw * cy + cx * cz), 1 - 2 * (cy * cy + cx * cx));
+    const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
+    const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
+    let moveX = 0, moveZ = 0;
+    if (this.up) {
+      moveX += fwdX;
+      moveZ += fwdZ;
     }
-    if (this._physx) {
-      const currentVel = this._physx.linearVelocity;
-      this._physx.linearVelocity = [
-        _direction[0],
-        currentVel[1],
-        _direction[2]
-      ];
-      this._physx.angularVelocity = [0, 0, 0];
-    } else {
-      this.object.translateLocal(_direction);
+    if (this.down) {
+      moveX -= fwdX;
+      moveZ -= fwdZ;
     }
+    if (this.right) {
+      moveX += rgtX;
+      moveZ += rgtZ;
+    }
+    if (this.left) {
+      moveX -= rgtX;
+      moveZ -= rgtZ;
+    }
+    const len4 = Math.sqrt(moveX * moveX + moveZ * moveZ);
+    if (len4 > 0) {
+      moveX /= len4;
+      moveZ /= len4;
+    }
+    let newVY = velY;
+    if (this.jump && this._onGround) {
+      newVY = this.jumpForce;
+    }
+    this.jump = false;
+    this._physx.linearVelocity = [moveX * this.speed, newVY, moveZ * this.speed];
   }
   press = (e) => {
     this.handleKey(e, true);
@@ -8888,27 +8905,38 @@ var WasdControlsComponent = class extends Component3 {
   release = (e) => {
     this.handleKey(e, false);
   };
-  handleKey(e, b) {
-    if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "KeyZ")
-      this.up = b;
-    else if (e.code === "ArrowRight" || e.code === "KeyD")
-      this.right = b;
-    else if (e.code === "ArrowDown" || e.code === "KeyS")
-      this.down = b;
-    else if (e.code === "ArrowLeft" || e.code === "KeyA" || e.code === "KeyQ")
-      this.left = b;
+  handleKey(e, pressed) {
+    switch (e.code) {
+      case "ArrowUp":
+      case "KeyW":
+      case "KeyZ":
+        this.up = pressed;
+        break;
+      case "ArrowRight":
+      case "KeyD":
+        this.right = pressed;
+        break;
+      case "ArrowDown":
+      case "KeyS":
+        this.down = pressed;
+        break;
+      case "ArrowLeft":
+      case "KeyA":
+      case "KeyQ":
+        this.left = pressed;
+        break;
+      case "Space":
+        if (pressed)
+          this.jump = true;
+        break;
+    }
   }
 };
 __publicField(WasdControlsComponent, "TypeName", "wasd-controls");
-__decorate17([
-  property.float(10)
-], WasdControlsComponent.prototype, "speed", void 0);
-__decorate17([
-  property.bool(false)
-], WasdControlsComponent.prototype, "lockY", void 0);
-__decorate17([
-  property.object()
-], WasdControlsComponent.prototype, "headObject", void 0);
+__decorate17([property.float(8)], WasdControlsComponent.prototype, "speed", void 0);
+__decorate17([property.float(5)], WasdControlsComponent.prototype, "jumpForce", void 0);
+__decorate17([property.bool(false)], WasdControlsComponent.prototype, "lockY", void 0);
+__decorate17([property.object()], WasdControlsComponent.prototype, "headObject", void 0);
 
 // node_modules/@wonderlandengine/components/dist/input-profile.js
 var __decorate18 = function(decorators, target, key, desc) {
@@ -9483,50 +9511,65 @@ __decorate19([
 ], OrbitalCamera.prototype, "target", void 0);
 
 // js/mobile-controls.js
+var _camRot2 = new Float32Array(4);
+var _vel2 = new Float32Array(3);
+var _pos2 = new Float32Array(3);
+var GROUND_DIST2 = 1.95;
+var GROUND_MASK2 = ~(1 << 4) & 255;
 var MobileControls = class extends Component3 {
   start() {
     this.moveX = 0;
     this.moveY = 0;
-    this.isLooking = false;
     this.joystickActive = false;
     this.joystickId = null;
+    this.joyRect = null;
+    this.isLooking = false;
     this.lookId = null;
     this.lookStartX = 0;
     this.lookStartY = 0;
+    this._jumpPending = false;
+    this._onGround = false;
+    this._physx = this.object.getComponent("physx");
+    if (!this._physx) {
+      console.warn("mobile-controls: no se encontr\xF3 physx en", this.object.name);
+      return;
+    }
     if (!("ontouchstart" in window))
       return;
     const mouseLook = this.headObject?.getComponent("mouse-look");
     if (mouseLook)
       mouseLook.active = false;
-    this.createJoystick();
-    window.addEventListener("touchstart", this.onTouchStart.bind(this), { passive: false });
-    window.addEventListener("touchmove", this.onTouchMove.bind(this), { passive: false });
-    window.addEventListener("touchend", this.onTouchEnd.bind(this));
+    this._createUI();
+    window.addEventListener("touchstart", this._onTouchStart.bind(this), { passive: false });
+    window.addEventListener("touchmove", this._onTouchMove.bind(this), { passive: false });
+    window.addEventListener("touchend", this._onTouchEnd.bind(this));
   }
-  createJoystick() {
+  _createUI() {
     const style = document.createElement("style");
     style.textContent = `
             #joyBase {
-                position: fixed;
-                bottom: 80px;
-                left: 60px;
-                width: 110px;
-                height: 110px;
+                position: fixed; bottom: 80px; left: 60px;
+                width: 110px; height: 110px;
                 background: rgba(255,255,255,0.12);
                 border: 2px solid rgba(255,255,255,0.35);
-                border-radius: 50%;
-                z-index: 9999;
-                touch-action: none;
+                border-radius: 50%; z-index: 9999; touch-action: none;
             }
             #joyKnob {
-                position: absolute;
-                top: 50%; left: 50%;
+                position: absolute; top: 50%; left: 50%;
                 transform: translate(-50%, -50%);
-                width: 48px;
-                height: 48px;
+                width: 48px; height: 48px;
                 background: rgba(255,255,255,0.55);
-                border-radius: 50%;
-                pointer-events: none;
+                border-radius: 50%; pointer-events: none;
+            }
+            #jumpBtn {
+                position: fixed; bottom: 80px; right: 60px;
+                width: 70px; height: 70px;
+                background: rgba(255,255,255,0.18);
+                border: 2px solid rgba(255,255,255,0.45);
+                border-radius: 50%; z-index: 9999;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 28px; color: rgba(255,255,255,0.8);
+                touch-action: none; user-select: none;
             }
         `;
     document.head.appendChild(style);
@@ -9536,17 +9579,31 @@ var MobileControls = class extends Component3 {
     knob.id = "joyKnob";
     base.appendChild(knob);
     document.body.appendChild(base);
-    this.joyBase = base;
-    this.joyKnob = knob;
+    this._joyBase = base;
+    this._joyKnob = knob;
+    const jumpBtn = document.createElement("div");
+    jumpBtn.id = "jumpBtn";
+    jumpBtn.textContent = "\u2B06";
+    document.body.appendChild(jumpBtn);
+    jumpBtn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      this._jumpPending = true;
+    }, { passive: false });
+    this._jumpBtn = jumpBtn;
   }
-  onTouchStart(e) {
+  _onTouchStart(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
-      if (t.clientX < window.innerWidth * 0.5 && !this.joystickActive) {
+      const isLeft = t.clientX < window.innerWidth * 0.5;
+      if (isLeft && !this.joystickActive) {
         this.joystickActive = true;
         this.joystickId = t.identifier;
-        this.joyRect = this.joyBase.getBoundingClientRect();
-      } else if (t.clientX >= window.innerWidth * 0.5 && !this.isLooking) {
+        this.joyRect = this._joyBase.getBoundingClientRect();
+      } else if (!isLeft && !this.isLooking) {
+        const jr = this._jumpBtn.getBoundingClientRect();
+        const overJump = t.clientX >= jr.left && t.clientX <= jr.right && t.clientY >= jr.top && t.clientY <= jr.bottom;
+        if (overJump)
+          continue;
         this.isLooking = true;
         this.lookId = t.identifier;
         this.lookStartX = t.clientX;
@@ -9554,7 +9611,7 @@ var MobileControls = class extends Component3 {
       }
     }
   }
-  onTouchMove(e) {
+  _onTouchMove(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.identifier === this.joystickId) {
@@ -9565,9 +9622,7 @@ var MobileControls = class extends Component3 {
         const max2 = 40;
         const dist2 = Math.min(Math.hypot(dx, dy), max2);
         const angle2 = Math.atan2(dy, dx);
-        const kx = Math.cos(angle2) * dist2;
-        const ky = Math.sin(angle2) * dist2;
-        this.joyKnob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+        this._joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle2) * dist2}px), calc(-50% + ${Math.sin(angle2) * dist2}px))`;
         this.moveX = dx / max2;
         this.moveY = dy / max2;
       } else if (t.identifier === this.lookId) {
@@ -9576,20 +9631,19 @@ var MobileControls = class extends Component3 {
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
         this.object.rotateAxisAngleDegObject([0, 1, 0], -dx * 0.2);
-        if (this.headObject) {
-          this.headObject.rotateAxisAngleDegObject([1, 0, 0], -dy * 0.2);
-        }
+        const head = this.headObject || this.object;
+        head.rotateAxisAngleDegObject([1, 0, 0], -dy * 0.2);
       }
     }
   }
-  onTouchEnd(e) {
+  _onTouchEnd(e) {
     for (const t of e.changedTouches) {
       if (t.identifier === this.joystickId) {
         this.joystickActive = false;
         this.joystickId = null;
         this.moveX = 0;
         this.moveY = 0;
-        this.joyKnob.style.transform = "translate(-50%, -50%)";
+        this._joyKnob.style.transform = "translate(-50%, -50%)";
       }
       if (t.identifier === this.lookId) {
         this.isLooking = false;
@@ -9598,19 +9652,46 @@ var MobileControls = class extends Component3 {
     }
   }
   update(dt) {
-    if (!this.joystickActive)
+    if (!this._physx)
       return;
-    const speed = 0.1;
-    this.object.translateObject([
-      this.moveX * speed,
-      0,
-      this.moveY * speed
-    ]);
+    this.object.getPositionWorld(_pos2);
+    const hit = this.engine.physics.rayCast(
+      _pos2,
+      [0, -1, 0],
+      GROUND_MASK2,
+      GROUND_DIST2
+    );
+    this._onGround = hit.hitCount > 0;
+    this._physx.getLinearVelocity(_vel2);
+    const velY = _vel2[1];
+    if (!this.joystickActive && !this._jumpPending)
+      return;
+    const head = this.headObject || this.object;
+    head.getRotationWorld(_camRot2);
+    const cx = _camRot2[0], cy = _camRot2[1], cz = _camRot2[2], cw = _camRot2[3];
+    const yaw = Math.atan2(2 * (cw * cy + cx * cz), 1 - 2 * (cy * cy + cx * cx));
+    const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
+    const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
+    let vx = rgtX * this.moveX - fwdX * this.moveY;
+    let vz = rgtZ * this.moveX - fwdZ * this.moveY;
+    const len4 = Math.sqrt(vx * vx + vz * vz);
+    if (len4 > 1) {
+      vx /= len4;
+      vz /= len4;
+    }
+    let newVY = velY;
+    if (this._jumpPending && this._onGround) {
+      newVY = this.jumpForce;
+    }
+    this._jumpPending = false;
+    this._physx.linearVelocity = [vx * this.speed, newVY, vz * this.speed];
   }
 };
 __publicField(MobileControls, "TypeName", "mobile-controls");
 __publicField(MobileControls, "Properties", {
-  headObject: Property.object()
+  headObject: Property.object(),
+  speed: Property.float(8),
+  jumpForce: Property.float(5)
 });
 
 // js/index.js
