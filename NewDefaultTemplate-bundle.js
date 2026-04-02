@@ -9514,7 +9514,6 @@ __decorate19([
 var _camRot2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var _pos2 = new Float32Array(3);
-var GROUND_DIST2 = 1.95;
 var GROUND_MASK2 = ~(1 << 4) & 255;
 var MobileControls = class extends Component3 {
   start() {
@@ -9527,8 +9526,6 @@ var MobileControls = class extends Component3 {
     this.lookId = null;
     this.lookStartX = 0;
     this.lookStartY = 0;
-    this._jumpPending = false;
-    this._onGround = false;
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
       console.warn("mobile-controls: no se encontr\xF3 physx en", this.object.name);
@@ -9561,16 +9558,6 @@ var MobileControls = class extends Component3 {
                 background: rgba(255,255,255,0.55);
                 border-radius: 50%; pointer-events: none;
             }
-            #jumpBtn {
-                position: fixed; bottom: 80px; right: 60px;
-                width: 70px; height: 70px;
-                background: rgba(255,255,255,0.18);
-                border: 2px solid rgba(255,255,255,0.45);
-                border-radius: 50%; z-index: 9999;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 28px; color: rgba(255,255,255,0.8);
-                touch-action: none; user-select: none;
-            }
         `;
     document.head.appendChild(style);
     const base = document.createElement("div");
@@ -9581,15 +9568,6 @@ var MobileControls = class extends Component3 {
     document.body.appendChild(base);
     this._joyBase = base;
     this._joyKnob = knob;
-    const jumpBtn = document.createElement("div");
-    jumpBtn.id = "jumpBtn";
-    jumpBtn.textContent = "\u2B06";
-    document.body.appendChild(jumpBtn);
-    jumpBtn.addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      this._jumpPending = true;
-    }, { passive: false });
-    this._jumpBtn = jumpBtn;
   }
   _onTouchStart(e) {
     e.preventDefault();
@@ -9600,10 +9578,6 @@ var MobileControls = class extends Component3 {
         this.joystickId = t.identifier;
         this.joyRect = this._joyBase.getBoundingClientRect();
       } else if (!isLeft && !this.isLooking) {
-        const jr = this._jumpBtn.getBoundingClientRect();
-        const overJump = t.clientX >= jr.left && t.clientX <= jr.right && t.clientY >= jr.top && t.clientY <= jr.bottom;
-        if (overJump)
-          continue;
         this.isLooking = true;
         this.lookId = t.identifier;
         this.lookStartX = t.clientX;
@@ -9630,7 +9604,7 @@ var MobileControls = class extends Component3 {
         const dy = t.clientY - this.lookStartY;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
-        this.object.rotateAxisAngleDegObject([0, 1, 0], -dx * 0.2);
+        this.object.rotateAxisAngleDegWorld([0, 1, 0], -dx * 0.2);
         const head = this.headObject || this.object;
         head.rotateAxisAngleDegObject([1, 0, 0], -dy * 0.2);
       }
@@ -9654,18 +9628,10 @@ var MobileControls = class extends Component3 {
   update(dt) {
     if (!this._physx)
       return;
-    this.object.getPositionWorld(_pos2);
-    const hit = this.engine.physics.rayCast(
-      _pos2,
-      [0, -1, 0],
-      GROUND_MASK2,
-      GROUND_DIST2
-    );
-    this._onGround = hit.hitCount > 0;
+    if (!this.joystickActive)
+      return;
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
-    if (!this.joystickActive && !this._jumpPending)
-      return;
     const head = this.headObject || this.object;
     head.getRotationWorld(_camRot2);
     const cx = _camRot2[0], cy = _camRot2[1], cz = _camRot2[2], cw = _camRot2[3];
@@ -9679,19 +9645,13 @@ var MobileControls = class extends Component3 {
       vx /= len4;
       vz /= len4;
     }
-    let newVY = velY;
-    if (this._jumpPending && this._onGround) {
-      newVY = this.jumpForce;
-    }
-    this._jumpPending = false;
-    this._physx.linearVelocity = [vx * this.speed, newVY, vz * this.speed];
+    this._physx.linearVelocity = [vx * this.speed, velY, vz * this.speed];
   }
 };
 __publicField(MobileControls, "TypeName", "mobile-controls");
 __publicField(MobileControls, "Properties", {
   headObject: Property.object(),
-  speed: Property.float(8),
-  jumpForce: Property.float(5)
+  speed: Property.float(8)
 });
 
 // js/index.js
