@@ -8822,21 +8822,15 @@ var __decorate17 = function(decorators, target, key, desc) {
 };
 var _camRot = new Float32Array(4);
 var _vel = new Float32Array(3);
-var _pos = new Float32Array(3);
-var GROUND_DIST = 1.95;
-var GROUND_MASK = ~(1 << 4) & 255;
 var WasdControlsComponent = class extends Component3 {
   speed;
-  jumpForce;
   lockY;
   headObject;
   right = false;
   down = false;
   left = false;
   up = false;
-  jump = false;
   _physx = null;
-  _onGround = false;
   start() {
     this.headObject = this.headObject || this.object;
     this._physx = this.object.getComponent("physx");
@@ -8855,14 +8849,8 @@ var WasdControlsComponent = class extends Component3 {
   update(dt) {
     if (!this._physx)
       return;
-    this.object.getPositionWorld(_pos);
-    const hit = this.engine.physics.rayCast(
-      _pos,
-      [0, -1, 0],
-      GROUND_MASK,
-      GROUND_DIST
-    );
-    this._onGround = hit.hitCount > 0;
+    if (!this.up && !this.down && !this.left && !this.right)
+      return;
     this._physx.getLinearVelocity(_vel);
     const velY = _vel[1];
     this.headObject.getRotationWorld(_camRot);
@@ -8892,12 +8880,7 @@ var WasdControlsComponent = class extends Component3 {
       moveX /= len4;
       moveZ /= len4;
     }
-    let newVY = velY;
-    if (this.jump && this._onGround) {
-      newVY = this.jumpForce;
-    }
-    this.jump = false;
-    this._physx.linearVelocity = [moveX * this.speed, newVY, moveZ * this.speed];
+    this._physx.linearVelocity = [moveX * this.speed, velY, moveZ * this.speed];
   }
   press = (e) => {
     this.handleKey(e, true);
@@ -8925,16 +8908,11 @@ var WasdControlsComponent = class extends Component3 {
       case "KeyQ":
         this.left = pressed;
         break;
-      case "Space":
-        if (pressed)
-          this.jump = true;
-        break;
     }
   }
 };
 __publicField(WasdControlsComponent, "TypeName", "wasd-controls");
 __decorate17([property.float(8)], WasdControlsComponent.prototype, "speed", void 0);
-__decorate17([property.float(5)], WasdControlsComponent.prototype, "jumpForce", void 0);
 __decorate17([property.bool(false)], WasdControlsComponent.prototype, "lockY", void 0);
 __decorate17([property.object()], WasdControlsComponent.prototype, "headObject", void 0);
 
