@@ -9503,9 +9503,10 @@ var MobileControls = class extends Component3 {
   lookId = null;
   lookStartX = 0;
   lookStartY = 0;
+  /* Pitch acumulado solo para la cámara (headObject) */
+  _pitch = 0;
   _physx = null;
   _isTouch = false;
-  /* ← flag: ¿es dispositivo táctil? */
   start() {
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
@@ -9591,10 +9592,15 @@ var MobileControls = class extends Component3 {
         const dy = t.clientY - this.lookStartY;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
-        this.object.rotateAxisAngleDegWorld([0, 1, 0], -dx * 0.2);
-        if (this.headObject) {
-          this.headObject.rotateAxisAngleDegObject([1, 0, 0], -dy * 0.2);
-        }
+        this.object.rotateAxisAngleDegWorld(
+          [0, 1, 0],
+          -dx * this.lookSensitivity
+        );
+        this._pitch -= dy * this.lookSensitivity;
+        const limit = 80;
+        this._pitch = Math.max(-limit, Math.min(limit, this._pitch));
+        this.headObject.resetRotation();
+        this.headObject.rotateAxisAngleDegObject([1, 0, 0], this._pitch);
       }
     }
   }
@@ -9642,7 +9648,8 @@ var MobileControls = class extends Component3 {
 __publicField(MobileControls, "TypeName", "mobile-controls");
 __publicField(MobileControls, "Properties", {
   speed: Property.float(8),
-  headObject: Property.object()
+  headObject: Property.object(),
+  lookSensitivity: Property.float(0.2)
 });
 
 // js/index.js
