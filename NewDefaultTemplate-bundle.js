@@ -9503,7 +9503,6 @@ var MobileControls = class extends Component3 {
   lookId = null;
   lookStartX = 0;
   lookStartY = 0;
-  /* Pitch acumulado solo para la cámara (headObject) */
   _pitch = 0;
   _physx = null;
   _isTouch = false;
@@ -9513,16 +9512,23 @@ var MobileControls = class extends Component3 {
       console.warn("mobile-controls: no se encontr\xF3 physx en", this.object.name);
     }
     this.headObject = this.headObject || this.object;
+    console.log("[MC] start() \u2014 headObject:", this.headObject?.name ?? "NULL");
+    console.log("[MC] isTouchDevice:", "ontouchstart" in window);
     if (!("ontouchstart" in window))
       return;
     this._isTouch = true;
     const mouseLook = this.headObject.getComponent("mouse-look");
-    if (mouseLook)
+    if (mouseLook) {
       mouseLook.active = false;
+      console.log("[MC] mouse-look desactivado");
+    } else {
+      console.log("[MC] mouse-look NO encontrado en headObject");
+    }
     this._createJoystick();
     window.addEventListener("touchstart", this._onTouchStart.bind(this), { passive: false });
     window.addEventListener("touchmove", this._onTouchMove.bind(this), { passive: false });
     window.addEventListener("touchend", this._onTouchEnd.bind(this));
+    console.log("[MC] listeners t\xE1ctiles registrados");
   }
   _createJoystick() {
     const style = document.createElement("style");
@@ -9561,15 +9567,18 @@ var MobileControls = class extends Component3 {
     e.preventDefault();
     for (const t of e.changedTouches) {
       const isLeft = t.clientX < window.innerWidth * 0.5;
+      console.log(`[MC] touchstart id=${t.identifier} x=${t.clientX.toFixed(0)} isLeft=${isLeft} joystickActive=${this.joystickActive} isLooking=${this.isLooking}`);
       if (isLeft && !this.joystickActive) {
         this.joystickActive = true;
         this.joystickId = t.identifier;
         this.joyRect = this.joyBase.getBoundingClientRect();
+        console.log("[MC] \u2192 joystick activado");
       } else if (!isLeft && !this.isLooking) {
         this.isLooking = true;
         this.lookId = t.identifier;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
+        console.log("[MC] \u2192 look activado");
       }
     }
   }
@@ -9592,15 +9601,14 @@ var MobileControls = class extends Component3 {
         const dy = t.clientY - this.lookStartY;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
-        this.object.rotateAxisAngleDegWorld(
-          [0, 1, 0],
-          -dx * this.lookSensitivity
-        );
+        console.log(`[MC] look dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} pitch=${this._pitch.toFixed(2)}`);
+        this.object.rotateAxisAngleDegWorld([0, 1, 0], -dx * this.lookSensitivity);
         this._pitch -= dy * this.lookSensitivity;
         const limit = 80;
         this._pitch = Math.max(-limit, Math.min(limit, this._pitch));
         this.headObject.resetRotation();
         this.headObject.rotateAxisAngleDegObject([1, 0, 0], this._pitch);
+        console.log(`[MC] rotateAxisAngleDegWorld yaw OK \u2014 pitch aplicado: ${this._pitch.toFixed(2)}`);
       }
     }
   }
@@ -9612,10 +9620,12 @@ var MobileControls = class extends Component3 {
         this.moveX = 0;
         this.moveY = 0;
         this.joyKnob.style.transform = "translate(-50%, -50%)";
+        console.log("[MC] joystick liberado");
       }
       if (t.identifier === this.lookId) {
         this.isLooking = false;
         this.lookId = null;
+        console.log("[MC] look liberado");
       }
     }
   }
