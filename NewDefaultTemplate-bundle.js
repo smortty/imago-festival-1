@@ -9490,10 +9490,166 @@ __decorate19([
   property.object()
 ], OrbitalCamera.prototype, "target", void 0);
 
+// js/mobile-controls.js
+var _camRot2 = new Float32Array(4);
+var _vel2 = new Float32Array(3);
+var MobileControls = class extends Component3 {
+  moveX = 0;
+  moveY = 0;
+  joystickActive = false;
+  joystickId = null;
+  joyRect = null;
+  isLooking = false;
+  lookId = null;
+  lookStartX = 0;
+  lookStartY = 0;
+  _physx = null;
+  _isTouch = false;
+  /* ← flag: ¿es dispositivo táctil? */
+  start() {
+    this._physx = this.object.getComponent("physx");
+    if (!this._physx) {
+      console.warn("mobile-controls: no se encontr\xF3 physx en", this.object.name);
+    }
+    this.headObject = this.headObject || this.object;
+    if (!("ontouchstart" in window))
+      return;
+    this._isTouch = true;
+    const mouseLook = this.headObject.getComponent("mouse-look");
+    if (mouseLook)
+      mouseLook.active = false;
+    this._createJoystick();
+    window.addEventListener("touchstart", this._onTouchStart.bind(this), { passive: false });
+    window.addEventListener("touchmove", this._onTouchMove.bind(this), { passive: false });
+    window.addEventListener("touchend", this._onTouchEnd.bind(this));
+  }
+  _createJoystick() {
+    const style = document.createElement("style");
+    style.textContent = `
+            #joyBase {
+                position: fixed;
+                bottom: 80px; left: 60px;
+                width: 110px; height: 110px;
+                background: rgba(255,255,255,0.12);
+                border: 2px solid rgba(255,255,255,0.35);
+                border-radius: 50%;
+                z-index: 9999;
+                touch-action: none;
+            }
+            #joyKnob {
+                position: absolute;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                width: 48px; height: 48px;
+                background: rgba(255,255,255,0.55);
+                border-radius: 50%;
+                pointer-events: none;
+            }
+        `;
+    document.head.appendChild(style);
+    const base = document.createElement("div");
+    base.id = "joyBase";
+    const knob = document.createElement("div");
+    knob.id = "joyKnob";
+    base.appendChild(knob);
+    document.body.appendChild(base);
+    this.joyBase = base;
+    this.joyKnob = knob;
+  }
+  _onTouchStart(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const isLeft = t.clientX < window.innerWidth * 0.5;
+      if (isLeft && !this.joystickActive) {
+        this.joystickActive = true;
+        this.joystickId = t.identifier;
+        this.joyRect = this.joyBase.getBoundingClientRect();
+      } else if (!isLeft && !this.isLooking) {
+        this.isLooking = true;
+        this.lookId = t.identifier;
+        this.lookStartX = t.clientX;
+        this.lookStartY = t.clientY;
+      }
+    }
+  }
+  _onTouchMove(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.joystickId) {
+        const cx = this.joyRect.left + this.joyRect.width / 2;
+        const cy = this.joyRect.top + this.joyRect.height / 2;
+        const dx = t.clientX - cx;
+        const dy = t.clientY - cy;
+        const max2 = 40;
+        const dist2 = Math.min(Math.hypot(dx, dy), max2);
+        const angle2 = Math.atan2(dy, dx);
+        this.joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle2) * dist2}px), calc(-50% + ${Math.sin(angle2) * dist2}px))`;
+        this.moveX = dx / max2;
+        this.moveY = dy / max2;
+      } else if (t.identifier === this.lookId) {
+        const dx = t.clientX - this.lookStartX;
+        const dy = t.clientY - this.lookStartY;
+        this.lookStartX = t.clientX;
+        this.lookStartY = t.clientY;
+        this.object.rotateAxisAngleDegWorld([0, 1, 0], -dx * 0.2);
+        if (this.headObject) {
+          this.headObject.rotateAxisAngleDegObject([1, 0, 0], -dy * 0.2);
+        }
+      }
+    }
+  }
+  _onTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.joystickId) {
+        this.joystickActive = false;
+        this.joystickId = null;
+        this.moveX = 0;
+        this.moveY = 0;
+        this.joyKnob.style.transform = "translate(-50%, -50%)";
+      }
+      if (t.identifier === this.lookId) {
+        this.isLooking = false;
+        this.lookId = null;
+      }
+    }
+  }
+  update(dt) {
+    if (!this._isTouch)
+      return;
+    if (!this._physx)
+      return;
+    this._physx.getLinearVelocity(_vel2);
+    const velY = _vel2[1];
+    if (!this.joystickActive) {
+      this._physx.linearVelocity = [0, velY, 0];
+      return;
+    }
+    this.headObject.getRotationWorld(_camRot2);
+    const cx = _camRot2[0], cy = _camRot2[1], cz = _camRot2[2], cw = _camRot2[3];
+    const yaw = Math.atan2(2 * (cw * cy + cx * cz), 1 - 2 * (cy * cy + cx * cx));
+    const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
+    const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
+    let dirX = this.moveX * rgtX + -this.moveY * fwdX;
+    let dirZ = this.moveX * rgtZ + -this.moveY * fwdZ;
+    const len4 = Math.sqrt(dirX * dirX + dirZ * dirZ);
+    if (len4 > 1) {
+      dirX /= len4;
+      dirZ /= len4;
+    }
+    this._physx.linearVelocity = [dirX * this.speed, velY, dirZ * this.speed];
+  }
+};
+__publicField(MobileControls, "TypeName", "mobile-controls");
+__publicField(MobileControls, "Properties", {
+  speed: Property.float(8),
+  headObject: Property.object()
+});
+
 // js/index.js
 function js_default(engine) {
   engine.registerComponent(MouseLookComponent);
   engine.registerComponent(WasdControlsComponent);
+  engine.registerComponent(MobileControls);
 }
 export {
   js_default as default
