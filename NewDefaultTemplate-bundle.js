@@ -8831,14 +8831,24 @@ var WasdControlsComponent = class extends Component3 {
   left = false;
   up = false;
   _physx = null;
+  _isTouch = false;
   start() {
     this.headObject = this.headObject || this.object;
+    if ("ontouchstart" in window || navigator.maxTouchPoints > 0) {
+      this._isTouch = true;
+      this.active = false;
+      console.log("[WASD] dispositivo t\xE1ctil detectado \u2192 componente desactivado");
+      return;
+    }
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
       console.warn("wasd-controls: no se encontr\xF3 physx en", this.object.name);
     }
+    console.log("[WASD] modo escritorio activo");
   }
   onActivate() {
+    if (this._isTouch)
+      return;
     window.addEventListener("keydown", this.press);
     window.addEventListener("keyup", this.release);
   }
@@ -8847,6 +8857,8 @@ var WasdControlsComponent = class extends Component3 {
     window.removeEventListener("keyup", this.release);
   }
   update(dt) {
+    if (this._isTouch)
+      return;
     if (!this._physx)
       return;
     this._physx.getLinearVelocity(_vel);
@@ -9491,7 +9503,7 @@ __decorate19([
 ], OrbitalCamera.prototype, "target", void 0);
 
 // js/mobile-controls.js
-var _camRot2 = new Float32Array(4);
+var _bodyRot = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var MobileControls = class extends Component3 {
   moveX = 0;
@@ -9514,9 +9526,18 @@ var MobileControls = class extends Component3 {
     this.headObject = this.headObject || this.object;
     console.log("[MC] start() \u2014 headObject:", this.headObject?.name ?? "NULL");
     console.log("[MC] isTouchDevice:", "ontouchstart" in window);
-    if (!("ontouchstart" in window))
+    if (!("ontouchstart" in window) && navigator.maxTouchPoints === 0) {
+      console.log("[MC] dispositivo NO t\xE1ctil \u2192 componente inactivo");
       return;
+    }
     this._isTouch = true;
+    const wasd = this.object.getComponent("wasd-controls");
+    if (wasd) {
+      wasd.active = false;
+      console.log("[MC] wasd-controls desactivado expl\xEDcitamente");
+    } else {
+      console.log("[MC] wasd-controls no encontrado (normal si no est\xE1 en la escena)");
+    }
     const mouseLook = this.headObject.getComponent("mouse-look");
     if (mouseLook) {
       mouseLook.active = false;
@@ -9608,7 +9629,7 @@ var MobileControls = class extends Component3 {
         this._pitch = Math.max(-limit, Math.min(limit, this._pitch));
         this.headObject.resetRotation();
         this.headObject.rotateAxisAngleDegObject([1, 0, 0], this._pitch);
-        console.log(`[MC] rotateAxisAngleDegWorld yaw OK \u2014 pitch aplicado: ${this._pitch.toFixed(2)}`);
+        console.log(`[MC] yaw OK \u2014 pitch aplicado: ${this._pitch.toFixed(2)}`);
       }
     }
   }
@@ -9640,9 +9661,9 @@ var MobileControls = class extends Component3 {
       this._physx.linearVelocity = [0, velY, 0];
       return;
     }
-    this.headObject.getRotationWorld(_camRot2);
-    const cx = _camRot2[0], cy = _camRot2[1], cz = _camRot2[2], cw = _camRot2[3];
-    const yaw = Math.atan2(2 * (cw * cy + cx * cz), 1 - 2 * (cy * cy + cx * cx));
+    this.object.getRotationWorld(_bodyRot);
+    const bx = _bodyRot[0], by = _bodyRot[1], bz = _bodyRot[2], bw = _bodyRot[3];
+    const yaw = Math.atan2(2 * (bw * by + bx * bz), 1 - 2 * (by * by + bx * bx));
     const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
     const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
     let dirX = this.moveX * rgtX + -this.moveY * fwdX;
