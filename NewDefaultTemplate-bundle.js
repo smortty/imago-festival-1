@@ -9503,19 +9503,27 @@ __decorate19([
 ], OrbitalCamera.prototype, "target", void 0);
 
 // js/mobile-controls.js
-var _bodyRot = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var MobileControls = class extends Component3 {
+  // ── Joystick ──────────────────────────────────────────────────────────────
   moveX = 0;
   moveY = 0;
   joystickActive = false;
   joystickId = null;
   joyRect = null;
+  // ── Look ─────────────────────────────────────────────────────────────────
   isLooking = false;
   lookId = null;
   lookStartX = 0;
   lookStartY = 0;
+  // ── Estado interno ────────────────────────────────────────────────────────
+  // _yaw y _pitch se acumulan en los eventos táctiles y se APLICAN en update().
+  // Esto es equivalente a cómo linearVelocity sobrevive al motor de física:
+  // al reaplicar la rotación 60 veces/segundo, ganamos el conflicto con physx.
+  _yaw = 0;
+  // grados, acumulado — rotación horizontal del body
   _pitch = 0;
+  // grados, clamped   — rotación vertical del headObject
   _physx = null;
   _isTouch = false;
   start() {
@@ -9525,7 +9533,6 @@ var MobileControls = class extends Component3 {
     }
     this.headObject = this.headObject || this.object;
     console.log("[MC] start() \u2014 headObject:", this.headObject?.name ?? "NULL");
-    console.log("[MC] isTouchDevice:", "ontouchstart" in window);
     if (!("ontouchstart" in window) && navigator.maxTouchPoints === 0) {
       console.log("[MC] dispositivo NO t\xE1ctil \u2192 componente inactivo");
       return;
@@ -9534,22 +9541,18 @@ var MobileControls = class extends Component3 {
     const wasd = this.object.getComponent("wasd-controls");
     if (wasd) {
       wasd.active = false;
-      console.log("[MC] wasd-controls desactivado expl\xEDcitamente");
-    } else {
-      console.log("[MC] wasd-controls no encontrado (normal si no est\xE1 en la escena)");
+      console.log("[MC] wasd-controls desactivado");
     }
     const mouseLook = this.headObject.getComponent("mouse-look");
     if (mouseLook) {
       mouseLook.active = false;
       console.log("[MC] mouse-look desactivado");
-    } else {
-      console.log("[MC] mouse-look NO encontrado en headObject");
     }
     this._createJoystick();
     window.addEventListener("touchstart", this._onTouchStart.bind(this), { passive: false });
     window.addEventListener("touchmove", this._onTouchMove.bind(this), { passive: false });
     window.addEventListener("touchend", this._onTouchEnd.bind(this));
-    console.log("[MC] listeners t\xE1ctiles registrados");
+    console.log("[MC] listo \u2014 yaw/pitch se aplican en update()");
   }
   _createJoystick() {
     const style = document.createElement("style");
@@ -9588,18 +9591,17 @@ var MobileControls = class extends Component3 {
     e.preventDefault();
     for (const t of e.changedTouches) {
       const isLeft = t.clientX < window.innerWidth * 0.5;
-      console.log(`[MC] touchstart id=${t.identifier} x=${t.clientX.toFixed(0)} isLeft=${isLeft} joystickActive=${this.joystickActive} isLooking=${this.isLooking}`);
       if (isLeft && !this.joystickActive) {
         this.joystickActive = true;
         this.joystickId = t.identifier;
         this.joyRect = this.joyBase.getBoundingClientRect();
-        console.log("[MC] \u2192 joystick activado");
+        console.log("[MC] joystick activado id=" + t.identifier);
       } else if (!isLeft && !this.isLooking) {
         this.isLooking = true;
         this.lookId = t.identifier;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
-        console.log("[MC] \u2192 look activado");
+        console.log("[MC] look activado id=" + t.identifier);
       }
     }
   }
@@ -9622,14 +9624,9 @@ var MobileControls = class extends Component3 {
         const dy = t.clientY - this.lookStartY;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
-        console.log(`[MC] look dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} pitch=${this._pitch.toFixed(2)}`);
-        this.object.rotateAxisAngleDegWorld([0, 1, 0], -dx * this.lookSensitivity);
+        this._yaw -= dx * this.lookSensitivity;
         this._pitch -= dy * this.lookSensitivity;
-        const limit = 80;
-        this._pitch = Math.max(-limit, Math.min(limit, this._pitch));
-        this.headObject.resetRotation();
-        this.headObject.rotateAxisAngleDegObject([1, 0, 0], this._pitch);
-        console.log(`[MC] yaw OK \u2014 pitch aplicado: ${this._pitch.toFixed(2)}`);
+        this._pitch = Math.max(-80, Math.min(80, this._pitch));
       }
     }
   }
@@ -9655,17 +9652,22 @@ var MobileControls = class extends Component3 {
       return;
     if (!this._physx)
       return;
+    const yRad = this._yaw * (Math.PI / 180);
+    const sinHY = Math.sin(yRad * 0.5);
+    const cosHY = Math.cos(yRad * 0.5);
+    this.object.rotationWorld = [0, sinHY, 0, cosHY];
+    const pRad = this._pitch * (Math.PI / 180);
+    const sinHP = Math.sin(pRad * 0.5);
+    const cosHP = Math.cos(pRad * 0.5);
+    this.headObject.rotationLocal = [sinHP, 0, 0, cosHP];
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
     if (!this.joystickActive) {
       this._physx.linearVelocity = [0, velY, 0];
       return;
     }
-    this.object.getRotationWorld(_bodyRot);
-    const bx = _bodyRot[0], by = _bodyRot[1], bz = _bodyRot[2], bw = _bodyRot[3];
-    const yaw = Math.atan2(2 * (bw * by + bx * bz), 1 - 2 * (by * by + bx * bx));
-    const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
-    const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
+    const fwdX = -Math.sin(yRad), fwdZ = -Math.cos(yRad);
+    const rgtX = Math.cos(yRad), rgtZ = -Math.sin(yRad);
     let dirX = this.moveX * rgtX + -this.moveY * fwdX;
     let dirZ = this.moveX * rgtZ + -this.moveY * fwdZ;
     const len4 = Math.sqrt(dirX * dirX + dirZ * dirZ);
