@@ -9516,43 +9516,40 @@ var MobileControls = class extends Component3 {
   lookId = null;
   lookStartX = 0;
   lookStartY = 0;
-  // ── Estado interno ────────────────────────────────────────────────────────
-  // _yaw y _pitch se acumulan en los eventos táctiles y se APLICAN en update().
-  // Esto es equivalente a cómo linearVelocity sobrevive al motor de física:
-  // al reaplicar la rotación 60 veces/segundo, ganamos el conflicto con physx.
+  // ── Ángulos acumulados (la fuente de verdad) ───────────────────────────
   _yaw = 0;
-  // grados, acumulado — rotación horizontal del body
+  // grados totales de rotación horizontal
   _pitch = 0;
-  // grados, clamped   — rotación vertical del headObject
+  // grados totales de rotación vertical (clamped ±80)
   _physx = null;
   _isTouch = false;
   start() {
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
-      console.warn("mobile-controls: no se encontr\xF3 physx en", this.object.name);
+      console.warn("[MC] physx no encontrado en", this.object.name);
     }
     this.headObject = this.headObject || this.object;
-    console.log("[MC] start() \u2014 headObject:", this.headObject?.name ?? "NULL");
+    console.log("[MC] headObject:", this.headObject?.name ?? "NULL");
     if (!("ontouchstart" in window) && navigator.maxTouchPoints === 0) {
-      console.log("[MC] dispositivo NO t\xE1ctil \u2192 componente inactivo");
+      console.log("[MC] escritorio detectado \u2192 inactivo");
       return;
     }
     this._isTouch = true;
     const wasd = this.object.getComponent("wasd-controls");
     if (wasd) {
       wasd.active = false;
-      console.log("[MC] wasd-controls desactivado");
+      console.log("[MC] wasd-controls off");
     }
-    const mouseLook = this.headObject.getComponent("mouse-look");
-    if (mouseLook) {
-      mouseLook.active = false;
-      console.log("[MC] mouse-look desactivado");
+    const ml = this.headObject.getComponent("mouse-look");
+    if (ml) {
+      ml.active = false;
+      console.log("[MC] mouse-look off");
     }
     this._createJoystick();
     window.addEventListener("touchstart", this._onTouchStart.bind(this), { passive: false });
     window.addEventListener("touchmove", this._onTouchMove.bind(this), { passive: false });
     window.addEventListener("touchend", this._onTouchEnd.bind(this));
-    console.log("[MC] listo \u2014 yaw/pitch se aplican en update()");
+    console.log("[MC] listeners t\xE1ctiles OK");
   }
   _createJoystick() {
     const style = document.createElement("style");
@@ -9595,13 +9592,13 @@ var MobileControls = class extends Component3 {
         this.joystickActive = true;
         this.joystickId = t.identifier;
         this.joyRect = this.joyBase.getBoundingClientRect();
-        console.log("[MC] joystick activado id=" + t.identifier);
+        console.log("[MC] joystick ON id=" + t.identifier);
       } else if (!isLeft && !this.isLooking) {
         this.isLooking = true;
         this.lookId = t.identifier;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
-        console.log("[MC] look activado id=" + t.identifier);
+        console.log("[MC] look ON id=" + t.identifier);
       }
     }
   }
@@ -9638,12 +9635,12 @@ var MobileControls = class extends Component3 {
         this.moveX = 0;
         this.moveY = 0;
         this.joyKnob.style.transform = "translate(-50%, -50%)";
-        console.log("[MC] joystick liberado");
+        console.log("[MC] joystick OFF");
       }
       if (t.identifier === this.lookId) {
         this.isLooking = false;
         this.lookId = null;
-        console.log("[MC] look liberado");
+        console.log("[MC] look OFF");
       }
     }
   }
@@ -9652,20 +9649,16 @@ var MobileControls = class extends Component3 {
       return;
     if (!this._physx)
       return;
-    const yRad = this._yaw * (Math.PI / 180);
-    const sinHY = Math.sin(yRad * 0.5);
-    const cosHY = Math.cos(yRad * 0.5);
-    this.object.rotationWorld = [0, sinHY, 0, cosHY];
-    const pRad = this._pitch * (Math.PI / 180);
-    const sinHP = Math.sin(pRad * 0.5);
-    const cosHP = Math.cos(pRad * 0.5);
-    this.headObject.rotationLocal = [sinHP, 0, 0, cosHP];
+    this.headObject.resetRotation();
+    this.headObject.rotateAxisAngleDegWorld([0, 1, 0], this._yaw);
+    this.headObject.rotateAxisAngleDegObject([1, 0, 0], this._pitch);
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
     if (!this.joystickActive) {
       this._physx.linearVelocity = [0, velY, 0];
       return;
     }
+    const yRad = this._yaw * (Math.PI / 180);
     const fwdX = -Math.sin(yRad), fwdZ = -Math.cos(yRad);
     const rgtX = Math.cos(yRad), rgtZ = -Math.sin(yRad);
     let dirX = this.moveX * rgtX + -this.moveY * fwdX;
