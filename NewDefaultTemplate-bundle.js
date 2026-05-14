@@ -9503,18 +9503,25 @@ __decorate19([
 ], OrbitalCamera.prototype, "target", void 0);
 
 // js/player-controls.js
-var _camRot2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
+var _tempQuat2 = new Float32Array(4);
+var _tempDQ = new Float32Array(8);
+var _dir = new Float32Array(3);
 var PlayerControls = class extends Component3 {
-  // ── Detección de plataforma ───────────────────────────────────────────────
+  /* ── Detección ───────────────────────────────────────────────────────── */
   _isMobile = false;
   _physx = null;
-  // ── Estado teclado (PC) ───────────────────────────────────────────────────
+  /* ── PC: estado teclado ──────────────────────────────────────────────── */
   _keyUp = false;
   _keyDown = false;
   _keyLeft = false;
   _keyRight = false;
-  // ── Estado joystick (Mobile) ──────────────────────────────────────────────
+  /* ── Mobile: ángulos acumulados (fuente de verdad única) ─────────────── */
+  _rotX = 0;
+  // pitch (arriba/abajo) — mismo nombre que mouse-look oficial
+  _rotY = 0;
+  // yaw   (izq/der)     — mismo nombre que mouse-look oficial
+  /* ── Mobile: joystick ────────────────────────────────────────────────── */
   _moveX = 0;
   _moveY = 0;
   _joystickActive = false;
@@ -9522,51 +9529,43 @@ var PlayerControls = class extends Component3 {
   _joyRect = null;
   _joyBase = null;
   _joyKnob = null;
-  // ── Estado look táctil (Mobile) ───────────────────────────────────────────
+  /* ── Mobile: look touch ──────────────────────────────────────────────── */
   _isLooking = false;
   _lookId = null;
   _lookStartX = 0;
   _lookStartY = 0;
-  _yaw = 0;
-  // grados acumulados de rotación horizontal
-  _pitch = 0;
-  // grados acumulados de rotación vertical (clamped ±80)
-  // ── Handlers enlazados (guardados para poder removerlos) ──────────────────
+  /* ── Referencias a handlers (para removeEventListener limpio) ────────── */
   _boundKeyDown = null;
   _boundKeyUp = null;
   _boundTouchStart = null;
   _boundTouchMove = null;
   _boundTouchEnd = null;
   // ─────────────────────────────────────────────────────────────────────────
-  // INICIO
-  // ─────────────────────────────────────────────────────────────────────────
   start() {
     if (!this.headObject) {
       this.headObject = this.object;
-      console.warn("[PlayerControls] headObject no asignado \u2192 usando objeto ra\xEDz. Asigna el objeto c\xE1mara en el editor para mobile look correcto.");
+      console.warn("[PC] headObject no asignado \u2192 usando objeto ra\xEDz.");
     }
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
-      console.error('[PlayerControls] No se encontr\xF3 componente physx en "' + this.object.name + '". Sin \xE9l no habr\xE1 movimiento.');
+      console.error('[PC] physx no encontrado en "' + this.object.name + '".');
       return;
     }
     this._isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    console.log("[PlayerControls] Plataforma:", this._isMobile ? "MOBILE" : "PC");
+    console.log("[PC] Plataforma:", this._isMobile ? "MOBILE" : "PC");
     if (this._isMobile) {
       this._setupMobile();
     } else {
       this._setupDesktop();
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
-  // SETUP PC
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── SETUP PC ──────────────────────────────────────────────────────────────
   _setupDesktop() {
     this._boundKeyDown = (e) => this._handleKey(e, true);
     this._boundKeyUp = (e) => this._handleKey(e, false);
     window.addEventListener("keydown", this._boundKeyDown);
     window.addEventListener("keyup", this._boundKeyUp);
-    console.log("[PlayerControls] Listeners de teclado registrados.");
+    console.log("[PC] teclado OK");
   }
   _handleKey(e, pressed) {
     switch (e.code) {
@@ -9590,76 +9589,79 @@ var PlayerControls = class extends Component3 {
         break;
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
-  // SETUP MOBILE
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── SETUP MOBILE ─────────────────────────────────────────────────────────
   _setupMobile() {
     const ml = this.headObject.getComponent("mouse-look");
     if (ml) {
       ml.active = false;
-      console.log("[PlayerControls] mouse-look desactivado.");
+      console.log("[PC] mouse-look desactivado");
     }
     this._createJoystick();
     this._boundTouchStart = (e) => this._onTouchStart(e);
     this._boundTouchMove = (e) => this._onTouchMove(e);
     this._boundTouchEnd = (e) => this._onTouchEnd(e);
-    window.addEventListener("touchstart", this._boundTouchStart, { passive: false, capture: true });
-    window.addEventListener("touchmove", this._boundTouchMove, { passive: false, capture: true });
-    window.addEventListener("touchend", this._boundTouchEnd, { capture: true });
-    console.log("[PlayerControls] Listeners t\xE1ctiles registrados.");
+    const canvas2 = this.engine.canvas;
+    canvas2.addEventListener("touchstart", this._boundTouchStart, { passive: false, capture: true });
+    canvas2.addEventListener("touchmove", this._boundTouchMove, { passive: false, capture: true });
+    canvas2.addEventListener("touchend", this._boundTouchEnd, { capture: true });
+    document.addEventListener("touchstart", this._boundTouchStart, { passive: false, capture: true });
+    document.addEventListener("touchmove", this._boundTouchMove, { passive: false, capture: true });
+    document.addEventListener("touchend", this._boundTouchEnd, { capture: true });
+    console.log("[PC] touch listeners OK (canvas + document, capture:true)");
   }
   _createJoystick() {
     const style = document.createElement("style");
     style.textContent = `
-            #pc-joy-base {
+            #wl-joy-base {
                 position: fixed;
                 bottom: 80px;
                 left: 60px;
-                width: 110px;
-                height: 110px;
-                background: rgba(255,255,255,0.12);
-                border: 2px solid rgba(255,255,255,0.35);
+                width: 120px;
+                height: 120px;
+                background: rgba(255,255,255,0.15);
+                border: 2px solid rgba(255,255,255,0.4);
                 border-radius: 50%;
                 z-index: 9999;
                 touch-action: none;
             }
-            #pc-joy-knob {
+            #wl-joy-knob {
                 position: absolute;
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
-                width: 48px;
-                height: 48px;
-                background: rgba(255,255,255,0.55);
+                width: 50px;
+                height: 50px;
+                background: rgba(255,255,255,0.6);
                 border-radius: 50%;
+                pointer-events: none;
             }
         `;
     document.head.appendChild(style);
     const base = document.createElement("div");
-    base.id = "pc-joy-base";
+    base.id = "wl-joy-base";
     const knob = document.createElement("div");
-    knob.id = "pc-joy-knob";
+    knob.id = "wl-joy-knob";
     base.appendChild(knob);
     document.body.appendChild(base);
     this._joyBase = base;
     this._joyKnob = knob;
   }
-  // ─────────────────────────────────────────────────────────────────────────
-  // TOUCH HANDLERS
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── TOUCH HANDLERS ───────────────────────────────────────────────────────
   _onTouchStart(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
-      const isLeftSide = t.clientX < window.innerWidth * 0.5;
-      if (isLeftSide && !this._joystickActive) {
+      const isLeft = t.clientX < window.innerWidth * 0.5;
+      if (isLeft && !this._joystickActive) {
         this._joystickActive = true;
         this._joystickId = t.identifier;
         this._joyRect = this._joyBase.getBoundingClientRect();
-      } else if (!isLeftSide && !this._isLooking) {
+        console.log("[PC] joystick ON id=" + t.identifier);
+      } else if (!isLeft && !this._isLooking) {
         this._isLooking = true;
         this._lookId = t.identifier;
         this._lookStartX = t.clientX;
         this._lookStartY = t.clientY;
+        console.log("[PC] look ON id=" + t.identifier);
       }
     }
   }
@@ -9671,7 +9673,7 @@ var PlayerControls = class extends Component3 {
         const cy = this._joyRect.top + this._joyRect.height / 2;
         const dx = t.clientX - cx;
         const dy = t.clientY - cy;
-        const maxR = 40;
+        const maxR = 45;
         const dist2 = Math.min(Math.hypot(dx, dy), maxR);
         const angle2 = Math.atan2(dy, dx);
         this._joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle2) * dist2}px), calc(-50% + ${Math.sin(angle2) * dist2}px))`;
@@ -9683,9 +9685,9 @@ var PlayerControls = class extends Component3 {
         const dy = t.clientY - this._lookStartY;
         this._lookStartX = t.clientX;
         this._lookStartY = t.clientY;
-        this._yaw -= dx * this.lookSensitivity;
-        this._pitch -= dy * this.lookSensitivity;
-        this._pitch = Math.max(-80, Math.min(80, this._pitch));
+        this._rotY -= dx * this.lookSensitivity;
+        this._rotX -= dy * this.lookSensitivity;
+        this._rotX = Math.max(-89, Math.min(89, this._rotX));
       }
     }
   }
@@ -9697,36 +9699,33 @@ var PlayerControls = class extends Component3 {
         this._moveX = 0;
         this._moveY = 0;
         this._joyKnob.style.transform = "translate(-50%, -50%)";
+        console.log("[PC] joystick OFF");
       }
       if (t.identifier === this._lookId) {
         this._isLooking = false;
         this._lookId = null;
+        console.log("[PC] look OFF");
       }
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
-  // LIMPIEZA al desactivar el componente
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── LIMPIEZA ──────────────────────────────────────────────────────────────
   onDeactivate() {
     if (this._isMobile) {
-      if (this._boundTouchStart)
-        window.removeEventListener("touchstart", this._boundTouchStart, { capture: true });
-      if (this._boundTouchMove)
-        window.removeEventListener("touchmove", this._boundTouchMove, { capture: true });
-      if (this._boundTouchEnd)
-        window.removeEventListener("touchend", this._boundTouchEnd, { capture: true });
+      const canvas2 = this.engine.canvas;
+      canvas2.removeEventListener("touchstart", this._boundTouchStart, { capture: true });
+      canvas2.removeEventListener("touchmove", this._boundTouchMove, { capture: true });
+      canvas2.removeEventListener("touchend", this._boundTouchEnd, { capture: true });
+      document.removeEventListener("touchstart", this._boundTouchStart, { capture: true });
+      document.removeEventListener("touchmove", this._boundTouchMove, { capture: true });
+      document.removeEventListener("touchend", this._boundTouchEnd, { capture: true });
       if (this._joyBase)
         this._joyBase.remove();
     } else {
-      if (this._boundKeyDown)
-        window.removeEventListener("keydown", this._boundKeyDown);
-      if (this._boundKeyUp)
-        window.removeEventListener("keyup", this._boundKeyUp);
+      window.removeEventListener("keydown", this._boundKeyDown);
+      window.removeEventListener("keyup", this._boundKeyUp);
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
-  // UPDATE LOOP
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── UPDATE LOOP ───────────────────────────────────────────────────────────
   update(dt) {
     if (!this._physx)
       return;
@@ -9736,7 +9735,7 @@ var PlayerControls = class extends Component3 {
       this._updateDesktop();
     }
   }
-  // ── PC: leer yaw de headObject (lo mueve mouse-look) ─────────────────────
+  // ── PC UPDATE ─────────────────────────────────────────────────────────────
   _updateDesktop() {
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
@@ -9744,49 +9743,40 @@ var PlayerControls = class extends Component3 {
       this._physx.linearVelocity = [0, velY, 0];
       return;
     }
-    this.headObject.getRotationWorld(_camRot2);
-    const cx = _camRot2[0], cy = _camRot2[1], cz = _camRot2[2], cw = _camRot2[3];
-    const yaw = Math.atan2(2 * (cw * cy + cx * cz), 1 - 2 * (cy * cy + cx * cx));
-    const fwdX = -Math.sin(yaw), fwdZ = -Math.cos(yaw);
-    const rgtX = Math.cos(yaw), rgtZ = -Math.sin(yaw);
-    let moveX = 0, moveZ = 0;
-    if (this._keyUp) {
-      moveX += fwdX;
-      moveZ += fwdZ;
-    }
-    if (this._keyDown) {
-      moveX -= fwdX;
-      moveZ -= fwdZ;
-    }
-    if (this._keyRight) {
-      moveX += rgtX;
-      moveZ += rgtZ;
-    }
-    if (this._keyLeft) {
-      moveX -= rgtX;
-      moveZ -= rgtZ;
-    }
-    const len4 = Math.sqrt(moveX * moveX + moveZ * moveZ);
+    vec3_exports.set(_dir, 0, 0, 0);
+    if (this._keyUp)
+      _dir[2] -= 1;
+    if (this._keyDown)
+      _dir[2] += 1;
+    if (this._keyLeft)
+      _dir[0] -= 1;
+    if (this._keyRight)
+      _dir[0] += 1;
+    vec3_exports.normalize(_dir, _dir);
+    vec3_exports.transformQuat(_dir, _dir, this.headObject.getTransformWorld(_tempDQ));
+    _dir[1] = 0;
+    const len4 = Math.sqrt(_dir[0] * _dir[0] + _dir[2] * _dir[2]);
     if (len4 > 0) {
-      moveX /= len4;
-      moveZ /= len4;
+      _dir[0] /= len4;
+      _dir[2] /= len4;
     }
-    this._physx.linearVelocity = [moveX * this.speed, velY, moveZ * this.speed];
+    this._physx.linearVelocity = [_dir[0] * this.speed, velY, _dir[2] * this.speed];
   }
-  // ── Mobile: rotar headObject con yaw/pitch acumulados ────────────────────
+  // ── MOBILE UPDATE ─────────────────────────────────────────────────────────
   _updateMobile() {
-    this.headObject.resetRotation();
-    this.headObject.rotateAxisAngleDegWorld([0, 1, 0], this._yaw);
-    this.headObject.rotateAxisAngleDegObject([1, 0, 0], this._pitch);
+    quat_exports.fromEuler(_tempQuat2, this._rotX, this._rotY, 0);
+    this.headObject.setRotationLocal(_tempQuat2);
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
     if (!this._joystickActive) {
       this._physx.linearVelocity = [0, velY, 0];
       return;
     }
-    const yRad = this._yaw * (Math.PI / 180);
-    const fwdX = -Math.sin(yRad), fwdZ = -Math.cos(yRad);
-    const rgtX = Math.cos(yRad), rgtZ = -Math.sin(yRad);
+    const yRad = this._rotY * (Math.PI / 180);
+    const fwdX = -Math.sin(yRad);
+    const fwdZ = -Math.cos(yRad);
+    const rgtX = Math.cos(yRad);
+    const rgtZ = -Math.sin(yRad);
     let dirX = this._moveX * rgtX + -this._moveY * fwdX;
     let dirZ = this._moveX * rgtZ + -this._moveY * fwdZ;
     const len4 = Math.sqrt(dirX * dirX + dirZ * dirZ);
@@ -9799,12 +9789,9 @@ var PlayerControls = class extends Component3 {
 };
 __publicField(PlayerControls, "TypeName", "player-controls");
 __publicField(PlayerControls, "Properties", {
-  /** Velocidad de movimiento en m/s */
   speed: Property.float(8),
-  /** Objeto hijo que contiene la cámara (obligatorio asignarlo en el editor) */
   headObject: Property.object(),
-  /** Sensibilidad del look táctil (grados por píxel) */
-  lookSensitivity: Property.float(0.2)
+  lookSensitivity: Property.float(0.25)
 });
 
 // js/index.js
