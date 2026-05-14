@@ -9603,9 +9603,9 @@ var PlayerControls = class extends Component3 {
     this._boundTouchStart = (e) => this._onTouchStart(e);
     this._boundTouchMove = (e) => this._onTouchMove(e);
     this._boundTouchEnd = (e) => this._onTouchEnd(e);
-    window.addEventListener("touchstart", this._boundTouchStart, { passive: false });
-    window.addEventListener("touchmove", this._boundTouchMove, { passive: false });
-    window.addEventListener("touchend", this._boundTouchEnd);
+    window.addEventListener("touchstart", this._boundTouchStart, { passive: false, capture: true });
+    window.addEventListener("touchmove", this._boundTouchMove, { passive: false, capture: true });
+    window.addEventListener("touchend", this._boundTouchEnd, { capture: true });
     console.log("[PlayerControls] Listeners t\xE1ctiles registrados.");
   }
   _createJoystick() {
@@ -9622,7 +9622,6 @@ var PlayerControls = class extends Component3 {
                 border-radius: 50%;
                 z-index: 9999;
                 touch-action: none;
-                pointer-events: none;
             }
             #pc-joy-knob {
                 position: absolute;
@@ -9711,11 +9710,11 @@ var PlayerControls = class extends Component3 {
   onDeactivate() {
     if (this._isMobile) {
       if (this._boundTouchStart)
-        window.removeEventListener("touchstart", this._boundTouchStart);
+        window.removeEventListener("touchstart", this._boundTouchStart, { capture: true });
       if (this._boundTouchMove)
-        window.removeEventListener("touchmove", this._boundTouchMove);
+        window.removeEventListener("touchmove", this._boundTouchMove, { capture: true });
       if (this._boundTouchEnd)
-        window.removeEventListener("touchend", this._boundTouchEnd);
+        window.removeEventListener("touchend", this._boundTouchEnd, { capture: true });
       if (this._joyBase)
         this._joyBase.remove();
     } else {
