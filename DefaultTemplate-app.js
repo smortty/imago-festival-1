@@ -4597,7 +4597,7 @@ async function loadRuntime(runtime, options = {}) {
 
 // app.js
 var Constants = {
-  ProjectName: "Imago Fest",
+  ProjectName: "NewDefaultTemplate",
   RuntimeBaseName: "WonderlandRuntime",
   WebXRRequiredFeatures: ["local"],
   WebXROptionalFeatures: ["local", "hand-tracking", "hit-test"]
@@ -4648,4 +4648,4 @@ try {
   console.error(e);
   window.alert(`Failed to load ${Constants.ProjectName}.bin:`, e);
 }
-//# sourceMappingURL=NewDefaultTemplate-app.js.map
+//# sourceMappingURL=DefaultTemplate-app.js.map
