@@ -9507,10 +9507,8 @@ var TEMP_ROT2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var ROT_MUL2 = 180 / Math.PI / 100;
 var MobileControls = class extends Component3 {
-  /* ── Rotación acumulada ──────────────────────────────────────────────── */
   _rotX = 0;
   _rotY = 0;
-  /* ── Joystick ────────────────────────────────────────────────────────── */
   _moveX = 0;
   _moveY = 0;
   _joystickActive = false;
@@ -9518,11 +9516,11 @@ var MobileControls = class extends Component3 {
   _joyRect = null;
   _joyBase = null;
   _joyKnob = null;
-  /* ── Look ────────────────────────────────────────────────────────────── */
   _lookPtr = null;
   _lookLastX = 0;
   _lookLastY = 0;
   _physx = null;
+  _isMobile = false;
   // ─────────────────────────────────────────────────────────────────────────
   start() {
     if (!this.headObject) {
@@ -9533,29 +9531,34 @@ var MobileControls = class extends Component3 {
     if (!this._physx) {
       console.error('[MC] physx no encontrado en "' + this.object.name + '".');
     }
+    this._isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    console.log("[MC] plataforma:", this._isMobile ? "MOBILE" : "PC (componente inactivo)");
   }
-  // ── CICLO OFICIAL: onActivate / onDeactivate ───────────────────────────
+  // ── onActivate / onDeactivate ──────────────────────────────────────────
   onActivate() {
+    if (!this._isMobile)
+      return;
     const ml = this.headObject.getComponent("mouse-look");
     if (ml) {
       ml.active = false;
       console.log("[MC] mouse-look desactivado");
     }
     this._createJoystick();
-    const canvas2 = this.engine.canvas;
-    canvas2.style.touchAction = "none";
+    this.engine.canvas.style.touchAction = "none";
+    document.body.style.touchAction = "none";
     this._onDown = (e) => this._handleDown(e);
     this._onMove = (e) => this._handleMove(e);
     this._onUp = (e) => this._handleUp(e);
-    canvas2.addEventListener("pointerdown", this._onDown);
+    document.addEventListener("pointerdown", this._onDown);
     document.addEventListener("pointermove", this._onMove);
     document.addEventListener("pointerup", this._onUp);
     document.addEventListener("pointercancel", this._onUp);
-    console.log("[MC] activado");
+    console.log("[MC] listeners registrados en document");
   }
   onDeactivate() {
-    const canvas2 = this.engine.canvas;
-    canvas2.removeEventListener("pointerdown", this._onDown);
+    if (!this._isMobile)
+      return;
+    document.removeEventListener("pointerdown", this._onDown);
     document.removeEventListener("pointermove", this._onMove);
     document.removeEventListener("pointerup", this._onUp);
     document.removeEventListener("pointercancel", this._onUp);
@@ -9621,16 +9624,17 @@ var MobileControls = class extends Component3 {
   _handleDown(e) {
     e.preventDefault();
     const isLeft = e.clientX < window.innerWidth * 0.5;
+    console.log("[MC] pointerdown x=" + Math.round(e.clientX) + " isLeft=" + isLeft + " joyActive=" + this._joystickActive + " lookPtr=" + this._lookPtr);
     if (isLeft && this._joystickPtr === null) {
       this._joystickPtr = e.pointerId;
       this._joystickActive = true;
       this._joyRect = this._joyBase.getBoundingClientRect();
-      console.log("[MC] joystick START id=" + e.pointerId + " cx=" + Math.round(e.clientX) + " cy=" + Math.round(e.clientY));
+      console.log("[MC] joystick ON ptr=" + e.pointerId + " rect:", JSON.stringify(this._joyRect));
     } else if (!isLeft && this._lookPtr === null) {
       this._lookPtr = e.pointerId;
       this._lookLastX = e.clientX;
       this._lookLastY = e.clientY;
-      console.log("[MC] look START id=" + e.pointerId);
+      console.log("[MC] look ON ptr=" + e.pointerId);
     }
   }
   _handleMove(e) {
@@ -9666,16 +9670,16 @@ var MobileControls = class extends Component3 {
       this._moveX = 0;
       this._moveY = 0;
       this._joyKnob.style.transform = "translate(-50%,-50%)";
-      console.log("[MC] joystick END");
+      console.log("[MC] joystick OFF");
     }
     if (e.pointerId === this._lookPtr) {
       this._lookPtr = null;
-      console.log("[MC] look END");
+      console.log("[MC] look OFF");
     }
   }
   // ── UPDATE ────────────────────────────────────────────────────────────
   update(dt) {
-    if (!this._physx)
+    if (!this._isMobile || !this._physx)
       return;
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
