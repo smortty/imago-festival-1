@@ -9502,6 +9502,168 @@ __decorate19([
   property.object()
 ], OrbitalCamera.prototype, "target", void 0);
 
+// js/mobile controls.js
+var MobileControls = class extends Component3 {
+  start() {
+    this.moveX = 0;
+    this.moveY = 0;
+    this.isLooking = false;
+    this.joystickActive = false;
+    this.joystickId = null;
+    this.lookId = null;
+    this.lookStartX = 0;
+    this.lookStartY = 0;
+    if (!("ontouchstart" in window) && navigator.maxTouchPoints === 0)
+      return;
+    if (!this.headObject) {
+      this.headObject = this.object;
+      console.warn("[MC] headObject no asignado \u2192 usando objeto ra\xEDz.");
+    }
+    const mouseLook = this.headObject.getComponent("mouse-look");
+    if (mouseLook) {
+      mouseLook.active = false;
+      console.log("[MC] mouse-look desactivado");
+    }
+    this._createJoystick();
+    const canvas2 = this.engine.canvas;
+    this._onTouchStartBound = (e) => this._onTouchStart(e);
+    this._onTouchMoveBound = (e) => this._onTouchMove(e);
+    this._onTouchEndBound = (e) => this._onTouchEnd(e);
+    canvas2.addEventListener("touchstart", this._onTouchStartBound, { passive: false, capture: true });
+    canvas2.addEventListener("touchmove", this._onTouchMoveBound, { passive: false, capture: true });
+    canvas2.addEventListener("touchend", this._onTouchEndBound, { capture: true });
+    document.addEventListener("touchstart", this._onTouchStartBound, { passive: false, capture: true });
+    document.addEventListener("touchmove", this._onTouchMoveBound, { passive: false, capture: true });
+    document.addEventListener("touchend", this._onTouchEndBound, { capture: true });
+    console.log("[MC] touch listeners OK");
+  }
+  _createJoystick() {
+    if (document.getElementById("mc-joy-base"))
+      return;
+    const style = document.createElement("style");
+    style.textContent = `
+            #mc-joy-base {
+                position: fixed;
+                bottom: 80px;
+                left: 60px;
+                width: 110px;
+                height: 110px;
+                background: rgba(255,255,255,0.12);
+                border: 2px solid rgba(255,255,255,0.35);
+                border-radius: 50%;
+                z-index: 9999;
+                touch-action: none;
+            }
+            #mc-joy-knob {
+                position: absolute;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                width: 48px;
+                height: 48px;
+                background: rgba(255,255,255,0.55);
+                border-radius: 50%;
+                pointer-events: none;
+            }
+        `;
+    document.head.appendChild(style);
+    const base = document.createElement("div");
+    base.id = "mc-joy-base";
+    const knob = document.createElement("div");
+    knob.id = "mc-joy-knob";
+    base.appendChild(knob);
+    document.body.appendChild(base);
+    this._joyBase = base;
+    this._joyKnob = knob;
+  }
+  // ── TOUCH HANDLERS ───────────────────────────────────────────────────────
+  _onTouchStart(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const isLeft = t.clientX < window.innerWidth * 0.5;
+      if (isLeft && !this.joystickActive) {
+        this.joystickActive = true;
+        this.joystickId = t.identifier;
+        this._joyRect = this._joyBase.getBoundingClientRect();
+      } else if (!isLeft && !this.isLooking) {
+        this.isLooking = true;
+        this.lookId = t.identifier;
+        this.lookStartX = t.clientX;
+        this.lookStartY = t.clientY;
+      }
+    }
+  }
+  _onTouchMove(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.joystickId) {
+        const cx = this._joyRect.left + this._joyRect.width / 2;
+        const cy = this._joyRect.top + this._joyRect.height / 2;
+        const dx = t.clientX - cx;
+        const dy = t.clientY - cy;
+        const max2 = 40;
+        const dist2 = Math.min(Math.hypot(dx, dy), max2);
+        const angle2 = Math.atan2(dy, dx);
+        this._joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle2) * dist2}px), calc(-50% + ${Math.sin(angle2) * dist2}px))`;
+        this.moveX = Math.max(-1, Math.min(1, dx / max2));
+        this.moveY = Math.max(-1, Math.min(1, dy / max2));
+      }
+      if (t.identifier === this.lookId) {
+        const dx = t.clientX - this.lookStartX;
+        const dy = t.clientY - this.lookStartY;
+        this.lookStartX = t.clientX;
+        this.lookStartY = t.clientY;
+        this.object.rotateAxisAngleDegObject([0, 1, 0], -dx * 0.2);
+        if (this.headObject) {
+          this.headObject.rotateAxisAngleDegObject([1, 0, 0], -dy * 0.2);
+        }
+      }
+    }
+  }
+  _onTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.joystickId) {
+        this.joystickActive = false;
+        this.joystickId = null;
+        this.moveX = 0;
+        this.moveY = 0;
+        this._joyKnob.style.transform = "translate(-50%, -50%)";
+      }
+      if (t.identifier === this.lookId) {
+        this.isLooking = false;
+        this.lookId = null;
+      }
+    }
+  }
+  // ── LIMPIEZA ──────────────────────────────────────────────────────────────
+  onDeactivate() {
+    const canvas2 = this.engine.canvas;
+    canvas2.removeEventListener("touchstart", this._onTouchStartBound, { capture: true });
+    canvas2.removeEventListener("touchmove", this._onTouchMoveBound, { capture: true });
+    canvas2.removeEventListener("touchend", this._onTouchEndBound, { capture: true });
+    document.removeEventListener("touchstart", this._onTouchStartBound, { capture: true });
+    document.removeEventListener("touchmove", this._onTouchMoveBound, { capture: true });
+    document.removeEventListener("touchend", this._onTouchEndBound, { capture: true });
+    if (this._joyBase)
+      this._joyBase.remove();
+  }
+  // ── UPDATE LOOP ───────────────────────────────────────────────────────────
+  update(dt) {
+    if (!this.joystickActive)
+      return;
+    this.object.translateObject([
+      this.moveX * this.speed,
+      0,
+      -this.moveY * this.speed
+      // ← negado: corrige la inversión
+    ]);
+  }
+};
+__publicField(MobileControls, "TypeName", "mobile-controls");
+__publicField(MobileControls, "Properties", {
+  headObject: Property.object(),
+  speed: Property.float(0.1)
+});
+
 // js/player-controls.js
 var _vel2 = new Float32Array(3);
 var _tempDQ = new Float32Array(8);
@@ -9601,6 +9763,7 @@ __publicField(PlayerControls, "Properties", {
 // js/index.js
 function js_default(engine) {
   engine.registerComponent(MouseLookComponent);
+  engine.registerComponent(MobileControls);
   engine.registerComponent(PlayerControls);
 }
 export {
