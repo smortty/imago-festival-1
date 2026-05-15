@@ -9507,7 +9507,7 @@ var TEMP_ROT2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var ROT_MUL2 = 180 / Math.PI / 100;
 var MobileControls = class extends Component3 {
-  /* ── Rotación acumulada (misma lógica que mouse-look.ts oficial) ─────── */
+  /* ── Rotación acumulada ──────────────────────────────────────────────── */
   _rotX = 0;
   _rotY = 0;
   /* ── Joystick ────────────────────────────────────────────────────────── */
@@ -9515,16 +9515,13 @@ var MobileControls = class extends Component3 {
   _moveY = 0;
   _joystickActive = false;
   _joystickPtr = null;
-  // pointerId del dedo en el joystick
   _joyRect = null;
   _joyBase = null;
   _joyKnob = null;
-  /* ── Look táctil ─────────────────────────────────────────────────────── */
+  /* ── Look ────────────────────────────────────────────────────────────── */
   _lookPtr = null;
-  // pointerId del dedo de look
   _lookLastX = 0;
   _lookLastY = 0;
-  /* ── PhysX ───────────────────────────────────────────────────────────── */
   _physx = null;
   // ─────────────────────────────────────────────────────────────────────────
   start() {
@@ -9537,7 +9534,7 @@ var MobileControls = class extends Component3 {
       console.error('[MC] physx no encontrado en "' + this.object.name + '".');
     }
   }
-  // ── CICLO DE VIDA OFICIAL: onActivate / onDeactivate ──────────────────
+  // ── CICLO OFICIAL: onActivate / onDeactivate ───────────────────────────
   onActivate() {
     const ml = this.headObject.getComponent("mouse-look");
     if (ml) {
@@ -9547,37 +9544,36 @@ var MobileControls = class extends Component3 {
     this._createJoystick();
     const canvas2 = this.engine.canvas;
     canvas2.style.touchAction = "none";
-    this._onDown = (e) => this._handlePointerDown(e);
-    this._onMove = (e) => this._handlePointerMove(e);
-    this._onUp = (e) => this._handlePointerUp(e);
+    this._onDown = (e) => this._handleDown(e);
+    this._onMove = (e) => this._handleMove(e);
+    this._onUp = (e) => this._handleUp(e);
     canvas2.addEventListener("pointerdown", this._onDown);
-    canvas2.addEventListener("pointermove", this._onMove);
-    canvas2.addEventListener("pointerup", this._onUp);
-    canvas2.addEventListener("pointercancel", this._onUp);
-    console.log("[MC] activado \u2014 listeners Pointer Events registrados en canvas");
+    document.addEventListener("pointermove", this._onMove);
+    document.addEventListener("pointerup", this._onUp);
+    document.addEventListener("pointercancel", this._onUp);
+    console.log("[MC] activado");
   }
   onDeactivate() {
     const canvas2 = this.engine.canvas;
     canvas2.removeEventListener("pointerdown", this._onDown);
-    canvas2.removeEventListener("pointermove", this._onMove);
-    canvas2.removeEventListener("pointerup", this._onUp);
-    canvas2.removeEventListener("pointercancel", this._onUp);
+    document.removeEventListener("pointermove", this._onMove);
+    document.removeEventListener("pointerup", this._onUp);
+    document.removeEventListener("pointercancel", this._onUp);
     if (this._joyBase) {
       this._joyBase.remove();
       this._joyBase = null;
       this._joyKnob = null;
     }
-    const style = document.getElementById("mc-joy-style");
-    if (style)
-      style.remove();
+    const st = document.getElementById("mc-joy-style");
+    if (st)
+      st.remove();
     this._joystickActive = false;
     this._joystickPtr = null;
     this._lookPtr = null;
-    this._moveX = 0;
-    this._moveY = 0;
-    console.log("[MC] desactivado \u2014 listeners eliminados");
+    this._moveX = this._moveY = 0;
+    console.log("[MC] desactivado");
   }
-  // ── DOM: JOYSTICK ─────────────────────────────────────────────────────
+  // ── DOM ───────────────────────────────────────────────────────────────
   _createJoystick() {
     if (document.getElementById("mc-joy-base")) {
       this._joyBase = document.getElementById("mc-joy-base");
@@ -9597,7 +9593,7 @@ var MobileControls = class extends Component3 {
                 border: 2px solid rgba(255,255,255,0.45);
                 border-radius: 50%;
                 z-index: 9999;
-                pointer-events: none;   /* el canvas maneja los eventos */
+                pointer-events: none;
             }
             #mc-joy-knob {
                 position: absolute;
@@ -9621,26 +9617,24 @@ var MobileControls = class extends Component3 {
     this._joyKnob = knob;
     console.log("[MC] joystick DOM creado");
   }
-  // ── POINTER HANDLERS ─────────────────────────────────────────────────
-  _handlePointerDown(e) {
-    try {
-      this.engine.canvas.setPointerCapture(e.pointerId);
-    } catch (_) {
-    }
+  // ── HANDLERS ──────────────────────────────────────────────────────────
+  _handleDown(e) {
+    e.preventDefault();
     const isLeft = e.clientX < window.innerWidth * 0.5;
     if (isLeft && this._joystickPtr === null) {
       this._joystickPtr = e.pointerId;
       this._joystickActive = true;
       this._joyRect = this._joyBase.getBoundingClientRect();
-      console.log("[MC] joystick START ptr=" + e.pointerId);
+      console.log("[MC] joystick START id=" + e.pointerId + " cx=" + Math.round(e.clientX) + " cy=" + Math.round(e.clientY));
     } else if (!isLeft && this._lookPtr === null) {
       this._lookPtr = e.pointerId;
       this._lookLastX = e.clientX;
       this._lookLastY = e.clientY;
-      console.log("[MC] look START ptr=" + e.pointerId);
+      console.log("[MC] look START id=" + e.pointerId);
     }
   }
-  _handlePointerMove(e) {
+  _handleMove(e) {
+    e.preventDefault();
     if (e.pointerId === this._joystickPtr) {
       const cx = this._joyRect.left + this._joyRect.width / 2;
       const cy = this._joyRect.top + this._joyRect.height / 2;
@@ -9665,7 +9659,7 @@ var MobileControls = class extends Component3 {
       this.headObject.setRotationLocal(TEMP_ROT2);
     }
   }
-  _handlePointerUp(e) {
+  _handleUp(e) {
     if (e.pointerId === this._joystickPtr) {
       this._joystickActive = false;
       this._joystickPtr = null;
