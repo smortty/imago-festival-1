@@ -9507,20 +9507,27 @@ var TEMP_ROT2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var ROT_MUL2 = 180 / Math.PI / 100;
 var MobileControls = class extends Component3 {
+  /* ── Estado ──────────────────────────────────────────────────────────── */
+  moveX = 0;
+  moveY = 0;
+  joystickActive = false;
+  joystickId = null;
+  joyRect = null;
+  joyBase = null;
+  joyKnob = null;
+  isLooking = false;
+  lookId = null;
+  lookStartX = 0;
+  lookStartY = 0;
+  /* Rotación acumulada (evita drift de rotateAxisAngleDeg) */
   _rotX = 0;
   _rotY = 0;
-  _moveX = 0;
-  _moveY = 0;
-  _joystickActive = false;
-  _joystickPtr = null;
-  _joyRect = null;
-  _joyBase = null;
-  _joyKnob = null;
-  _lookPtr = null;
-  _lookLastX = 0;
-  _lookLastY = 0;
   _physx = null;
   _isMobile = false;
+  /* Bound handlers para poder removerlos en onDeactivate */
+  _boundTouchStart = null;
+  _boundTouchMove = null;
+  _boundTouchEnd = null;
   // ─────────────────────────────────────────────────────────────────────────
   start() {
     if (!this.headObject) {
@@ -9532,9 +9539,9 @@ var MobileControls = class extends Component3 {
       console.error('[MC] physx no encontrado en "' + this.object.name + '".');
     }
     this._isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    console.log("[MC] plataforma:", this._isMobile ? "MOBILE" : "PC (componente inactivo)");
+    console.log("[MC] plataforma:", this._isMobile ? "MOBILE" : "PC");
   }
-  // ── onActivate / onDeactivate ──────────────────────────────────────────
+  // ── CICLO OFICIAL ─────────────────────────────────────────────────────
   onActivate() {
     if (!this._isMobile)
       return;
@@ -9544,43 +9551,40 @@ var MobileControls = class extends Component3 {
       console.log("[MC] mouse-look desactivado");
     }
     this._createJoystick();
-    this.engine.canvas.style.touchAction = "none";
-    document.body.style.touchAction = "none";
-    this._onDown = (e) => this._handleDown(e);
-    this._onMove = (e) => this._handleMove(e);
-    this._onUp = (e) => this._handleUp(e);
-    document.addEventListener("pointerdown", this._onDown);
-    document.addEventListener("pointermove", this._onMove);
-    document.addEventListener("pointerup", this._onUp);
-    document.addEventListener("pointercancel", this._onUp);
-    console.log("[MC] listeners registrados en document");
+    this._boundTouchStart = (e) => this._onTouchStart(e);
+    this._boundTouchMove = (e) => this._onTouchMove(e);
+    this._boundTouchEnd = (e) => this._onTouchEnd(e);
+    window.addEventListener("touchstart", this._boundTouchStart, { passive: false });
+    window.addEventListener("touchmove", this._boundTouchMove, { passive: false });
+    window.addEventListener("touchend", this._boundTouchEnd);
+    console.log("[MC] activado \u2014 touch listeners en window");
   }
   onDeactivate() {
     if (!this._isMobile)
       return;
-    document.removeEventListener("pointerdown", this._onDown);
-    document.removeEventListener("pointermove", this._onMove);
-    document.removeEventListener("pointerup", this._onUp);
-    document.removeEventListener("pointercancel", this._onUp);
-    if (this._joyBase) {
-      this._joyBase.remove();
-      this._joyBase = null;
-      this._joyKnob = null;
+    window.removeEventListener("touchstart", this._boundTouchStart);
+    window.removeEventListener("touchmove", this._boundTouchMove);
+    window.removeEventListener("touchend", this._boundTouchEnd);
+    if (this.joyBase) {
+      this.joyBase.remove();
+      this.joyBase = null;
+      this.joyKnob = null;
     }
     const st = document.getElementById("mc-joy-style");
     if (st)
       st.remove();
-    this._joystickActive = false;
-    this._joystickPtr = null;
-    this._lookPtr = null;
-    this._moveX = this._moveY = 0;
+    this.joystickActive = false;
+    this.joystickId = null;
+    this.isLooking = false;
+    this.lookId = null;
+    this.moveX = this.moveY = 0;
     console.log("[MC] desactivado");
   }
   // ── DOM ───────────────────────────────────────────────────────────────
   _createJoystick() {
     if (document.getElementById("mc-joy-base")) {
-      this._joyBase = document.getElementById("mc-joy-base");
-      this._joyKnob = document.getElementById("mc-joy-knob");
+      this.joyBase = document.getElementById("mc-joy-base");
+      this.joyKnob = document.getElementById("mc-joy-knob");
       return;
     }
     const style = document.createElement("style");
@@ -9590,21 +9594,21 @@ var MobileControls = class extends Component3 {
                 position: fixed;
                 bottom: 80px;
                 left: 60px;
-                width: 120px;
-                height: 120px;
-                background: rgba(255,255,255,0.15);
-                border: 2px solid rgba(255,255,255,0.45);
+                width: 110px;
+                height: 110px;
+                background: rgba(255,255,255,0.12);
+                border: 2px solid rgba(255,255,255,0.35);
                 border-radius: 50%;
                 z-index: 9999;
-                pointer-events: none;
+                touch-action: none;
             }
             #mc-joy-knob {
                 position: absolute;
                 top: 50%; left: 50%;
-                transform: translate(-50%,-50%);
-                width: 52px;
-                height: 52px;
-                background: rgba(255,255,255,0.65);
+                transform: translate(-50%, -50%);
+                width: 48px;
+                height: 48px;
+                background: rgba(255,255,255,0.55);
                 border-radius: 50%;
                 pointer-events: none;
             }
@@ -9616,65 +9620,67 @@ var MobileControls = class extends Component3 {
     knob.id = "mc-joy-knob";
     base.appendChild(knob);
     document.body.appendChild(base);
-    this._joyBase = base;
-    this._joyKnob = knob;
+    this.joyBase = base;
+    this.joyKnob = knob;
     console.log("[MC] joystick DOM creado");
   }
-  // ── HANDLERS ──────────────────────────────────────────────────────────
-  _handleDown(e) {
+  // ── TOUCH HANDLERS — igual que el original que funcionaba ─────────────
+  _onTouchStart(e) {
     e.preventDefault();
-    const isLeft = e.clientX < window.innerWidth * 0.5;
-    console.log("[MC] pointerdown x=" + Math.round(e.clientX) + " isLeft=" + isLeft + " joyActive=" + this._joystickActive + " lookPtr=" + this._lookPtr);
-    if (isLeft && this._joystickPtr === null) {
-      this._joystickPtr = e.pointerId;
-      this._joystickActive = true;
-      this._joyRect = this._joyBase.getBoundingClientRect();
-      console.log("[MC] joystick ON ptr=" + e.pointerId + " rect:", JSON.stringify(this._joyRect));
-    } else if (!isLeft && this._lookPtr === null) {
-      this._lookPtr = e.pointerId;
-      this._lookLastX = e.clientX;
-      this._lookLastY = e.clientY;
-      console.log("[MC] look ON ptr=" + e.pointerId);
+    for (const t of e.changedTouches) {
+      if (t.clientX < window.innerWidth * 0.5 && !this.joystickActive) {
+        this.joystickActive = true;
+        this.joystickId = t.identifier;
+        this.joyRect = this.joyBase.getBoundingClientRect();
+      } else if (t.clientX >= window.innerWidth * 0.5 && !this.isLooking) {
+        this.isLooking = true;
+        this.lookId = t.identifier;
+        this.lookStartX = t.clientX;
+        this.lookStartY = t.clientY;
+      }
     }
   }
-  _handleMove(e) {
+  _onTouchMove(e) {
     e.preventDefault();
-    if (e.pointerId === this._joystickPtr) {
-      const cx = this._joyRect.left + this._joyRect.width / 2;
-      const cy = this._joyRect.top + this._joyRect.height / 2;
-      const dx = e.clientX - cx;
-      const dy = e.clientY - cy;
-      const maxR = 45;
-      const dist2 = Math.min(Math.hypot(dx, dy), maxR);
-      const angle2 = Math.atan2(dy, dx);
-      this._joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle2) * dist2}px), calc(-50% + ${Math.sin(angle2) * dist2}px))`;
-      this._moveX = Math.max(-1, Math.min(1, dx / maxR));
-      this._moveY = Math.max(-1, Math.min(1, dy / maxR));
-    }
-    if (e.pointerId === this._lookPtr) {
-      const dx = e.clientX - this._lookLastX;
-      const dy = e.clientY - this._lookLastY;
-      this._lookLastX = e.clientX;
-      this._lookLastY = e.clientY;
-      this._rotX += -this.lookSensitivity * dy * ROT_MUL2;
-      this._rotY += -this.lookSensitivity * dx * ROT_MUL2;
-      this._rotX = Math.max(-89, Math.min(89, this._rotX));
-      quat_exports.fromEuler(TEMP_ROT2, this._rotX, this._rotY, 0);
-      this.headObject.setRotationLocal(TEMP_ROT2);
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.joystickId) {
+        const cx = this.joyRect.left + this.joyRect.width / 2;
+        const cy = this.joyRect.top + this.joyRect.height / 2;
+        const dx = t.clientX - cx;
+        const dy = t.clientY - cy;
+        const max2 = 40;
+        const dist2 = Math.min(Math.hypot(dx, dy), max2);
+        const angle2 = Math.atan2(dy, dx);
+        this.joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle2) * dist2}px), calc(-50% + ${Math.sin(angle2) * dist2}px))`;
+        this.moveX = Math.max(-1, Math.min(1, dx / max2));
+        this.moveY = Math.max(-1, Math.min(1, dy / max2));
+      }
+      if (t.identifier === this.lookId) {
+        const dx = t.clientX - this.lookStartX;
+        const dy = t.clientY - this.lookStartY;
+        this.lookStartX = t.clientX;
+        this.lookStartY = t.clientY;
+        this._rotX += -this.lookSensitivity * dy * ROT_MUL2;
+        this._rotY += -this.lookSensitivity * dx * ROT_MUL2;
+        this._rotX = Math.max(-89, Math.min(89, this._rotX));
+        quat_exports.fromEuler(TEMP_ROT2, this._rotX, this._rotY, 0);
+        this.headObject.setRotationLocal(TEMP_ROT2);
+      }
     }
   }
-  _handleUp(e) {
-    if (e.pointerId === this._joystickPtr) {
-      this._joystickActive = false;
-      this._joystickPtr = null;
-      this._moveX = 0;
-      this._moveY = 0;
-      this._joyKnob.style.transform = "translate(-50%,-50%)";
-      console.log("[MC] joystick OFF");
-    }
-    if (e.pointerId === this._lookPtr) {
-      this._lookPtr = null;
-      console.log("[MC] look OFF");
+  _onTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.joystickId) {
+        this.joystickActive = false;
+        this.joystickId = null;
+        this.moveX = 0;
+        this.moveY = 0;
+        this.joyKnob.style.transform = "translate(-50%, -50%)";
+      }
+      if (t.identifier === this.lookId) {
+        this.isLooking = false;
+        this.lookId = null;
+      }
     }
   }
   // ── UPDATE ────────────────────────────────────────────────────────────
@@ -9683,7 +9689,7 @@ var MobileControls = class extends Component3 {
       return;
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
-    if (!this._joystickActive) {
+    if (!this.joystickActive) {
       this._physx.linearVelocity = [0, velY, 0];
       return;
     }
@@ -9692,8 +9698,8 @@ var MobileControls = class extends Component3 {
     const fwdZ = -Math.cos(yRad);
     const rgtX = Math.cos(yRad);
     const rgtZ = -Math.sin(yRad);
-    let dirX = this._moveX * rgtX + -this._moveY * fwdX;
-    let dirZ = this._moveX * rgtZ + -this._moveY * fwdZ;
+    let dirX = this.moveX * rgtX + -this.moveY * fwdX;
+    let dirZ = this.moveX * rgtZ + -this.moveY * fwdZ;
     const len4 = Math.sqrt(dirX * dirX + dirZ * dirZ);
     if (len4 > 1) {
       dirX /= len4;
