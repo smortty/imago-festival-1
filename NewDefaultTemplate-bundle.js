@@ -9635,69 +9635,37 @@ __publicField(MobileControls, "Properties", {
 
 // js/player-controls.js
 var _vel2 = new Float32Array(3);
-var _tempQuat2 = new Float32Array(4);
 var _tempDQ = new Float32Array(8);
 var _dir = new Float32Array(3);
 var PlayerControls = class extends Component3 {
-  /* ── Detección ───────────────────────────────────────────────────────── */
-  _isMobile = false;
+  /* ── Referencias internas ────────────────────────────────────────────── */
   _physx = null;
-  /* ── PC: estado teclado ──────────────────────────────────────────────── */
+  /* ── Estado teclado ──────────────────────────────────────────────────── */
   _keyUp = false;
   _keyDown = false;
   _keyLeft = false;
   _keyRight = false;
-  /* ── Mobile: ángulos acumulados (fuente de verdad única) ─────────────── */
-  _rotX = 0;
-  // pitch (arriba/abajo) — mismo nombre que mouse-look oficial
-  _rotY = 0;
-  // yaw   (izq/der)     — mismo nombre que mouse-look oficial
-  /* ── Mobile: joystick ────────────────────────────────────────────────── */
-  _moveX = 0;
-  _moveY = 0;
-  _joystickActive = false;
-  _joystickId = null;
-  _joyRect = null;
-  _joyBase = null;
-  _joyKnob = null;
-  /* ── Mobile: look touch ──────────────────────────────────────────────── */
-  _isLooking = false;
-  _lookId = null;
-  _lookStartX = 0;
-  _lookStartY = 0;
   /* ── Referencias a handlers (para removeEventListener limpio) ────────── */
   _boundKeyDown = null;
   _boundKeyUp = null;
-  _boundTouchStart = null;
-  _boundTouchMove = null;
-  _boundTouchEnd = null;
   // ─────────────────────────────────────────────────────────────────────────
   start() {
     if (!this.headObject) {
       this.headObject = this.object;
-      console.warn("[PC] headObject no asignado \u2192 usando objeto ra\xEDz.");
+      console.warn("[WASD] headObject no asignado \u2192 usando objeto ra\xEDz.");
     }
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
-      console.error('[PC] physx no encontrado en "' + this.object.name + '".');
+      console.error('[WASD] physx no encontrado en "' + this.object.name + '".');
       return;
     }
-    this._isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    console.log("[PC] Plataforma:", this._isMobile ? "MOBILE" : "PC");
-    if (this._isMobile) {
-      this._setupMobile();
-    } else {
-      this._setupDesktop();
-    }
-  }
-  // ── SETUP PC ──────────────────────────────────────────────────────────────
-  _setupDesktop() {
     this._boundKeyDown = (e) => this._handleKey(e, true);
     this._boundKeyUp = (e) => this._handleKey(e, false);
     window.addEventListener("keydown", this._boundKeyDown);
     window.addEventListener("keyup", this._boundKeyUp);
-    console.log("[PC] teclado OK");
+    console.log("[WASD] teclado OK");
   }
+  // ── TECLADO ───────────────────────────────────────────────────────────────
   _handleKey(e, pressed) {
     switch (e.code) {
       case "ArrowUp":
@@ -9720,154 +9688,15 @@ var PlayerControls = class extends Component3 {
         break;
     }
   }
-  // ── SETUP MOBILE ─────────────────────────────────────────────────────────
-  _setupMobile() {
-    const ml = this.headObject.getComponent("mouse-look");
-    if (ml) {
-      ml.active = false;
-      console.log("[PC] mouse-look desactivado");
-    }
-    this._createJoystick();
-    this._boundTouchStart = (e) => this._onTouchStart(e);
-    this._boundTouchMove = (e) => this._onTouchMove(e);
-    this._boundTouchEnd = (e) => this._onTouchEnd(e);
-    const canvas2 = this.engine.canvas;
-    canvas2.addEventListener("touchstart", this._boundTouchStart, { passive: false, capture: true });
-    canvas2.addEventListener("touchmove", this._boundTouchMove, { passive: false, capture: true });
-    canvas2.addEventListener("touchend", this._boundTouchEnd, { capture: true });
-    document.addEventListener("touchstart", this._boundTouchStart, { passive: false, capture: true });
-    document.addEventListener("touchmove", this._boundTouchMove, { passive: false, capture: true });
-    document.addEventListener("touchend", this._boundTouchEnd, { capture: true });
-    console.log("[PC] touch listeners OK (canvas + document, capture:true)");
-  }
-  _createJoystick() {
-    const style = document.createElement("style");
-    style.textContent = `
-            #wl-joy-base {
-                position: fixed;
-                bottom: 80px;
-                left: 60px;
-                width: 120px;
-                height: 120px;
-                background: rgba(255,255,255,0.15);
-                border: 2px solid rgba(255,255,255,0.4);
-                border-radius: 50%;
-                z-index: 9999;
-                touch-action: none;
-            }
-            #wl-joy-knob {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: 50px;
-                height: 50px;
-                background: rgba(255,255,255,0.6);
-                border-radius: 50%;
-                pointer-events: none;
-            }
-        `;
-    document.head.appendChild(style);
-    const base = document.createElement("div");
-    base.id = "wl-joy-base";
-    const knob = document.createElement("div");
-    knob.id = "wl-joy-knob";
-    base.appendChild(knob);
-    document.body.appendChild(base);
-    this._joyBase = base;
-    this._joyKnob = knob;
-  }
-  // ── TOUCH HANDLERS ───────────────────────────────────────────────────────
-  _onTouchStart(e) {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      const isLeft = t.clientX < window.innerWidth * 0.5;
-      if (isLeft && !this._joystickActive) {
-        this._joystickActive = true;
-        this._joystickId = t.identifier;
-        this._joyRect = this._joyBase.getBoundingClientRect();
-        console.log("[PC] joystick ON id=" + t.identifier);
-      } else if (!isLeft && !this._isLooking) {
-        this._isLooking = true;
-        this._lookId = t.identifier;
-        this._lookStartX = t.clientX;
-        this._lookStartY = t.clientY;
-        console.log("[PC] look ON id=" + t.identifier);
-      }
-    }
-  }
-  _onTouchMove(e) {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier === this._joystickId) {
-        const cx = this._joyRect.left + this._joyRect.width / 2;
-        const cy = this._joyRect.top + this._joyRect.height / 2;
-        const dx = t.clientX - cx;
-        const dy = t.clientY - cy;
-        const maxR = 45;
-        const dist2 = Math.min(Math.hypot(dx, dy), maxR);
-        const angle2 = Math.atan2(dy, dx);
-        this._joyKnob.style.transform = `translate(calc(-50% + ${Math.cos(angle2) * dist2}px), calc(-50% + ${Math.sin(angle2) * dist2}px))`;
-        this._moveX = Math.max(-1, Math.min(1, dx / maxR));
-        this._moveY = Math.max(-1, Math.min(1, dy / maxR));
-      }
-      if (t.identifier === this._lookId) {
-        const dx = t.clientX - this._lookStartX;
-        const dy = t.clientY - this._lookStartY;
-        this._lookStartX = t.clientX;
-        this._lookStartY = t.clientY;
-        this._rotY -= dx * this.lookSensitivity;
-        this._rotX -= dy * this.lookSensitivity;
-        this._rotX = Math.max(-89, Math.min(89, this._rotX));
-      }
-    }
-  }
-  _onTouchEnd(e) {
-    for (const t of e.changedTouches) {
-      if (t.identifier === this._joystickId) {
-        this._joystickActive = false;
-        this._joystickId = null;
-        this._moveX = 0;
-        this._moveY = 0;
-        this._joyKnob.style.transform = "translate(-50%, -50%)";
-        console.log("[PC] joystick OFF");
-      }
-      if (t.identifier === this._lookId) {
-        this._isLooking = false;
-        this._lookId = null;
-        console.log("[PC] look OFF");
-      }
-    }
-  }
   // ── LIMPIEZA ──────────────────────────────────────────────────────────────
   onDeactivate() {
-    if (this._isMobile) {
-      const canvas2 = this.engine.canvas;
-      canvas2.removeEventListener("touchstart", this._boundTouchStart, { capture: true });
-      canvas2.removeEventListener("touchmove", this._boundTouchMove, { capture: true });
-      canvas2.removeEventListener("touchend", this._boundTouchEnd, { capture: true });
-      document.removeEventListener("touchstart", this._boundTouchStart, { capture: true });
-      document.removeEventListener("touchmove", this._boundTouchMove, { capture: true });
-      document.removeEventListener("touchend", this._boundTouchEnd, { capture: true });
-      if (this._joyBase)
-        this._joyBase.remove();
-    } else {
-      window.removeEventListener("keydown", this._boundKeyDown);
-      window.removeEventListener("keyup", this._boundKeyUp);
-    }
+    window.removeEventListener("keydown", this._boundKeyDown);
+    window.removeEventListener("keyup", this._boundKeyUp);
   }
   // ── UPDATE LOOP ───────────────────────────────────────────────────────────
   update(dt) {
     if (!this._physx)
       return;
-    if (this._isMobile) {
-      this._updateMobile();
-    } else {
-      this._updateDesktop();
-    }
-  }
-  // ── PC UPDATE ─────────────────────────────────────────────────────────────
-  _updateDesktop() {
     this._physx.getLinearVelocity(_vel2);
     const velY = _vel2[1];
     if (!this._keyUp && !this._keyDown && !this._keyLeft && !this._keyRight) {
@@ -9893,36 +9722,11 @@ var PlayerControls = class extends Component3 {
     }
     this._physx.linearVelocity = [_dir[0] * this.speed, velY, _dir[2] * this.speed];
   }
-  // ── MOBILE UPDATE ─────────────────────────────────────────────────────────
-  _updateMobile() {
-    quat_exports.fromEuler(_tempQuat2, this._rotX, this._rotY, 0);
-    this.headObject.setRotationLocal(_tempQuat2);
-    this._physx.getLinearVelocity(_vel2);
-    const velY = _vel2[1];
-    if (!this._joystickActive) {
-      this._physx.linearVelocity = [0, velY, 0];
-      return;
-    }
-    const yRad = this._rotY * (Math.PI / 180);
-    const fwdX = -Math.sin(yRad);
-    const fwdZ = -Math.cos(yRad);
-    const rgtX = Math.cos(yRad);
-    const rgtZ = -Math.sin(yRad);
-    let dirX = this._moveX * rgtX + -this._moveY * fwdX;
-    let dirZ = this._moveX * rgtZ + -this._moveY * fwdZ;
-    const len4 = Math.sqrt(dirX * dirX + dirZ * dirZ);
-    if (len4 > 1) {
-      dirX /= len4;
-      dirZ /= len4;
-    }
-    this._physx.linearVelocity = [dirX * this.speed, velY, dirZ * this.speed];
-  }
 };
 __publicField(PlayerControls, "TypeName", "player-controls");
 __publicField(PlayerControls, "Properties", {
   speed: Property.float(8),
-  headObject: Property.object(),
-  lookSensitivity: Property.float(0.25)
+  headObject: Property.object()
 });
 
 // js/index.js
