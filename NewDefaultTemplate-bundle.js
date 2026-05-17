@@ -9502,7 +9502,7 @@ __decorate19([
   property.object()
 ], OrbitalCamera.prototype, "target", void 0);
 
-// js/Mobile-controls.js
+// js/mobile-controls-debug.js
 var TEMP_ROT2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var _dir = new Float32Array(3);
