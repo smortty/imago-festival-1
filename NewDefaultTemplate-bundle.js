@@ -9502,13 +9502,14 @@ __decorate19([
   property.object()
 ], OrbitalCamera.prototype, "target", void 0);
 
-// js/mobile-controls-debug.js
+// js/mobile-controls.js
 var TEMP_ROT2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var _dir = new Float32Array(3);
 var _tempDQ = new Float32Array(8);
 var ROT_MUL2 = 180 / Math.PI / 100;
 var MobileControls = class extends Component3 {
+  /* ── Estado joystick ─────────────────────────────────────────────────── */
   moveX = 0;
   moveY = 0;
   joystickActive = false;
@@ -9516,47 +9517,36 @@ var MobileControls = class extends Component3 {
   joyRect = null;
   joyBase = null;
   joyKnob = null;
+  /* ── Estado look ─────────────────────────────────────────────────────── */
   isLooking = false;
   lookId = null;
   lookStartX = 0;
   lookStartY = 0;
   _rotX = 0;
+  // pitch acumulado (grados)
   _rotY = 0;
+  // yaw acumulado (grados)
+  /* ── Internals ───────────────────────────────────────────────────────── */
   _physx = null;
   _isMobile = false;
   _setupDone = false;
   _boundTouchStart = null;
   _boundTouchMove = null;
   _boundTouchEnd = null;
-  /* ── HUD ─────────────────────────────────────────────────────────────── */
-  _hud = null;
-  _log = [];
-  // últimas N líneas de eventos
-  _frameN = 0;
   // ─────────────────────────────────────────────────────────────────────────
   start() {
-    this._createHUD();
-    this._hudLog("start() ejecutado");
     if (!this.headObject) {
       this.headObject = this.object;
-      this._hudLog("\u26A0 headObject no asignado");
-    } else {
-      this._hudLog("headObject: " + this.headObject.name);
+      console.warn("[MC] headObject no asignado \u2192 usando objeto ra\xEDz.");
     }
     this._physx = this.object.getComponent("physx");
     if (!this._physx) {
-      this._hudLog("\u274C physx NO encontrado en: " + this.object.name);
-    } else {
-      this._hudLog("\u2705 physx OK");
+      console.error('[MC] physx no encontrado en "' + this.object.name + '".');
     }
     this._isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    this._hudLog("maxTouchPoints: " + navigator.maxTouchPoints);
-    this._hudLog("ontouchstart: " + ("ontouchstart" in window));
-    this._hudLog("isMobile \u2192 " + this._isMobile);
-    if (!this._isMobile) {
-      this._hudLog("\u26D4 Plataforma PC \u2014 sin listeners");
+    console.log("[MC] plataforma:", this._isMobile ? "MOBILE" : "PC \u2014 sin activar");
+    if (!this._isMobile)
       return;
-    }
     const initRot = new Float32Array(4);
     this.headObject.getRotationLocal(initRot);
     const sinpitch = 2 * (initRot[3] * initRot[0] + initRot[1] * initRot[2]);
@@ -9566,16 +9556,17 @@ var MobileControls = class extends Component3 {
     const sinyaw = 2 * (initRot[3] * initRot[1] - initRot[2] * initRot[0]);
     const cosyaw = 1 - 2 * (initRot[1] * initRot[1] + initRot[2] * initRot[2]);
     this._rotY = Math.atan2(sinyaw, cosyaw) * (180 / Math.PI);
-    this._hudLog("rotInit X:" + this._rotX.toFixed(1) + " Y:" + this._rotY.toFixed(1));
+    const pc = this.object.getComponent("player-controls");
+    if (pc) {
+      pc.active = false;
+      console.log("[MC] player-controls desactivado");
+    }
     const ml = this.headObject.getComponent("mouse-look");
     if (ml) {
       ml.active = false;
-      this._hudLog("mouse-look desactivado");
-    } else {
-      this._hudLog("mouse-look: no encontrado (OK)");
+      console.log("[MC] mouse-look desactivado");
     }
     this._createJoystick();
-    this._hudLog("Joystick DOM creado");
     this._boundTouchStart = (e) => this._onTouchStart(e);
     this._boundTouchMove = (e) => this._onTouchMove(e);
     this._boundTouchEnd = (e) => this._onTouchEnd(e);
@@ -9583,8 +9574,9 @@ var MobileControls = class extends Component3 {
     window.addEventListener("touchmove", this._boundTouchMove, { passive: false });
     window.addEventListener("touchend", this._boundTouchEnd);
     this._setupDone = true;
-    this._hudLog("\u2705 Listeners registrados \u2014 listo");
+    console.log("[MC] touch listeners registrados");
   }
+  // ─────────────────────────────────────────────────────────────────────────
   onDeactivate() {
     if (!this._setupDone)
       return;
@@ -9599,100 +9591,15 @@ var MobileControls = class extends Component3 {
     const st = document.getElementById("mc-joy-style");
     if (st)
       st.remove();
-    if (this._hud) {
-      this._hud.remove();
-      this._hud = null;
-    }
     this.joystickActive = false;
     this.joystickId = null;
     this.isLooking = false;
     this.lookId = null;
     this.moveX = this.moveY = 0;
     this._setupDone = false;
+    console.log("[MC] desactivado, listeners eliminados");
   }
-  // ── HUD DOM ───────────────────────────────────────────────────────────────
-  _createHUD() {
-    const style = document.createElement("style");
-    style.textContent = `
-            #mc-debug-hud {
-                position: fixed;
-                top: 10px;
-                right: 10px;
-                width: 220px;
-                background: rgba(0,0,0,0.82);
-                color: #0f0;
-                font: 11px/1.4 monospace;
-                padding: 8px 10px;
-                border-radius: 8px;
-                z-index: 99999;
-                pointer-events: none;
-                border: 1px solid #0f04;
-            }
-            #mc-debug-hud .hud-title {
-                color: #ff0;
-                font-weight: bold;
-                font-size: 12px;
-                margin-bottom: 4px;
-                border-bottom: 1px solid #333;
-                padding-bottom: 3px;
-            }
-            #mc-debug-hud .hud-section { margin-top: 5px; }
-            #mc-debug-hud .hud-label  { color: #888; }
-            #mc-debug-hud .hud-ok     { color: #0f0; }
-            #mc-debug-hud .hud-err    { color: #f55; }
-            #mc-debug-hud .hud-warn   { color: #fa0; }
-            #mc-debug-hud .hud-log    {
-                margin-top: 5px;
-                border-top: 1px solid #333;
-                padding-top: 4px;
-                color: #aaa;
-                font-size: 10px;
-                max-height: 130px;
-                overflow: hidden;
-            }
-        `;
-    document.head.appendChild(style);
-    const hud = document.createElement("div");
-    hud.id = "mc-debug-hud";
-    hud.innerHTML = `
-            <div class="hud-title">\u{1F4F1} MC Debug</div>
-            <div id="hud-status"></div>
-            <div class="hud-section" id="hud-joy"></div>
-            <div class="hud-section" id="hud-look"></div>
-            <div class="hud-section" id="hud-phys"></div>
-            <div class="hud-log" id="hud-log"></div>
-        `;
-    document.body.appendChild(hud);
-    this._hud = hud;
-  }
-  _hudLog(msg) {
-    console.log("[MC-DBG]", msg);
-    this._log.unshift(msg);
-    if (this._log.length > 8)
-      this._log.pop();
-    const el = document.getElementById("hud-log");
-    if (el)
-      el.innerHTML = this._log.map((l) => `<div>${l}</div>`).join("");
-  }
-  _hudUpdate() {
-    const status = document.getElementById("hud-status");
-    const joy = document.getElementById("hud-joy");
-    const look = document.getElementById("hud-look");
-    const phys = document.getElementById("hud-phys");
-    if (!status)
-      return;
-    const ok = (t) => `<span class="hud-ok">${t}</span>`;
-    const err = (t) => `<span class="hud-err">${t}</span>`;
-    const lbl = (t) => `<span class="hud-label">${t}</span>`;
-    status.innerHTML = lbl("mobile: ") + (this._isMobile ? ok("YES") : err("NO")) + " | " + lbl("physx: ") + (this._physx ? ok("OK") : err("NULL"));
-    joy.innerHTML = lbl("JOY ") + (this.joystickActive ? ok("ACTIVE") : '<span style="color:#555">idle</span>') + ` id:${this.joystickId ?? "\u2013"}<br>` + lbl("  X: ") + this.moveX.toFixed(2) + lbl("  Y: ") + this.moveY.toFixed(2);
-    look.innerHTML = lbl("LOOK ") + (this.isLooking ? ok("ACTIVE") : '<span style="color:#555">idle</span>') + ` id:${this.lookId ?? "\u2013"}<br>` + lbl("  rotX: ") + this._rotX.toFixed(1) + lbl("  rotY: ") + this._rotY.toFixed(1);
-    if (this._physx) {
-      this._physx.getLinearVelocity(_vel2);
-      phys.innerHTML = lbl("VEL ") + `x:${_vel2[0].toFixed(1)} y:${_vel2[1].toFixed(1)} z:${_vel2[2].toFixed(1)}`;
-    }
-  }
-  // ── DOM JOYSTICK ──────────────────────────────────────────────────────────
+  // ── DOM ───────────────────────────────────────────────────────────────────
   _createJoystick() {
     if (document.getElementById("mc-joy-base")) {
       this.joyBase = document.getElementById("mc-joy-base");
@@ -9703,20 +9610,33 @@ var MobileControls = class extends Component3 {
     style.id = "mc-joy-style";
     style.textContent = `
             #mc-joy-base {
-                position: fixed; bottom: 80px; left: 60px;
-                width: 120px; height: 120px;
-                background: rgba(255,255,255,0.08);
-                border: 2px solid rgba(255,255,255,0.35);
-                border-radius: 50%; z-index: 9999; touch-action: none;
-                box-shadow: 0 0 24px rgba(255,255,255,0.06), inset 0 0 16px rgba(0,0,0,0.2);
+                position: fixed;
+                bottom: 80px;
+                left: 60px;
+                width: 120px;
+                height: 120px;
+                background: rgba(255, 255, 255, 0.08);
+                border: 2px solid rgba(255, 255, 255, 0.35);
+                border-radius: 50%;
+                z-index: 9999;
+                touch-action: none;
+                box-shadow: 0 0 24px rgba(255, 255, 255, 0.06),
+                            inset 0 0 16px rgba(0, 0, 0, 0.2);
             }
             #mc-joy-knob {
-                position: absolute; top: 50%; left: 50%;
+                position: absolute;
+                top: 50%; left: 50%;
                 transform: translate(-50%, -50%);
-                width: 50px; height: 50px;
-                background: radial-gradient(circle at 36% 36%, rgba(255,255,255,0.92), rgba(255,255,255,0.45));
-                border-radius: 50%; pointer-events: none;
-                box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+                width: 50px;
+                height: 50px;
+                background: radial-gradient(
+                    circle at 36% 36%,
+                    rgba(255, 255, 255, 0.92),
+                    rgba(255, 255, 255, 0.45)
+                );
+                border-radius: 50%;
+                pointer-events: none;
+                box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
             }
         `;
     document.head.appendChild(style);
@@ -9728,27 +9648,22 @@ var MobileControls = class extends Component3 {
     document.body.appendChild(base);
     this.joyBase = base;
     this.joyKnob = knob;
+    console.log("[MC] joystick DOM creado");
   }
   // ── TOUCH HANDLERS ────────────────────────────────────────────────────────
   _onTouchStart(e) {
     e.preventDefault();
     const half = window.innerWidth * 0.5;
-    this._hudLog(`touchstart: ${e.changedTouches.length} toque(s)`);
     for (const t of e.changedTouches) {
-      this._hudLog(`  id:${t.identifier} x:${t.clientX.toFixed(0)} (half:${half.toFixed(0)})`);
       if (t.clientX < half && !this.joystickActive) {
         this.joystickActive = true;
         this.joystickId = t.identifier;
         this.joyRect = this.joyBase.getBoundingClientRect();
-        this._hudLog(`  \u2192 JOY activado. rect: L${this.joyRect.left.toFixed(0)} T${this.joyRect.top.toFixed(0)} ${this.joyRect.width.toFixed(0)}x${this.joyRect.height.toFixed(0)}`);
       } else if (t.clientX >= half && !this.isLooking) {
         this.isLooking = true;
         this.lookId = t.identifier;
         this.lookStartX = t.clientX;
         this.lookStartY = t.clientY;
-        this._hudLog(`  \u2192 LOOK activado`);
-      } else {
-        this._hudLog(`  \u2192 ignorado (joy:${this.joystickActive} look:${this.isLooking})`);
       }
     }
   }
@@ -9787,21 +9702,18 @@ var MobileControls = class extends Component3 {
         this.joystickId = null;
         this.moveX = 0;
         this.moveY = 0;
-        if (this.joyKnob)
+        if (this.joyKnob) {
           this.joyKnob.style.transform = "translate(-50%, -50%)";
-        this._hudLog("JOY liberado");
+        }
       }
       if (t.identifier === this.lookId) {
         this.isLooking = false;
         this.lookId = null;
-        this._hudLog("LOOK liberado");
       }
     }
   }
   // ── UPDATE ────────────────────────────────────────────────────────────────
   update(dt) {
-    if (++this._frameN % 10 === 0)
-      this._hudUpdate();
     if (!this._isMobile || !this._physx)
       return;
     this._physx.getLinearVelocity(_vel2);
