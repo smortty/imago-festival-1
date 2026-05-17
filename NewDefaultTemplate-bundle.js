@@ -9507,7 +9507,6 @@ var TEMP_ROT2 = new Float32Array(4);
 var _vel2 = new Float32Array(3);
 var ROT_MUL2 = 180 / Math.PI / 100;
 var MobileControls = class extends Component3 {
-  /* ── Estado ──────────────────────────────────────────────────────────── */
   moveX = 0;
   moveY = 0;
   joystickActive = false;
@@ -9519,12 +9518,11 @@ var MobileControls = class extends Component3 {
   lookId = null;
   lookStartX = 0;
   lookStartY = 0;
-  /* Rotación acumulada (evita drift de rotateAxisAngleDeg) */
   _rotX = 0;
   _rotY = 0;
   _physx = null;
   _isMobile = false;
-  /* Bound handlers para poder removerlos en onDeactivate */
+  _setupDone = false;
   _boundTouchStart = null;
   _boundTouchMove = null;
   _boundTouchEnd = null;
@@ -9539,10 +9537,7 @@ var MobileControls = class extends Component3 {
       console.error('[MC] physx no encontrado en "' + this.object.name + '".');
     }
     this._isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    console.log("[MC] plataforma:", this._isMobile ? "MOBILE" : "PC");
-  }
-  // ── CICLO OFICIAL ─────────────────────────────────────────────────────
-  onActivate() {
+    console.log("[MC] plataforma:", this._isMobile ? "MOBILE" : "PC \u2014 sin activar");
     if (!this._isMobile)
       return;
     const ml = this.headObject.getComponent("mouse-look");
@@ -9557,10 +9552,11 @@ var MobileControls = class extends Component3 {
     window.addEventListener("touchstart", this._boundTouchStart, { passive: false });
     window.addEventListener("touchmove", this._boundTouchMove, { passive: false });
     window.addEventListener("touchend", this._boundTouchEnd);
-    console.log("[MC] activado \u2014 touch listeners en window");
+    this._setupDone = true;
+    console.log("[MC] touch listeners registrados en window");
   }
   onDeactivate() {
-    if (!this._isMobile)
+    if (!this._setupDone)
       return;
     window.removeEventListener("touchstart", this._boundTouchStart);
     window.removeEventListener("touchmove", this._boundTouchMove);
@@ -9578,7 +9574,8 @@ var MobileControls = class extends Component3 {
     this.isLooking = false;
     this.lookId = null;
     this.moveX = this.moveY = 0;
-    console.log("[MC] desactivado");
+    this._setupDone = false;
+    console.log("[MC] desactivado, listeners eliminados");
   }
   // ── DOM ───────────────────────────────────────────────────────────────
   _createJoystick() {
@@ -9624,7 +9621,7 @@ var MobileControls = class extends Component3 {
     this.joyKnob = knob;
     console.log("[MC] joystick DOM creado");
   }
-  // ── TOUCH HANDLERS — igual que el original que funcionaba ─────────────
+  // ── TOUCH HANDLERS ────────────────────────────────────────────────────
   _onTouchStart(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
