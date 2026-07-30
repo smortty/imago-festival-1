@@ -4604,7 +4604,7 @@ var Constants = {
 };
 var RuntimeOptions = {
   webgl2: true,
-  webgpu: false,
+  webgpu: true,
   physx: true,
   loader: false,
   xrFramebufferScaleFactor: 1,
