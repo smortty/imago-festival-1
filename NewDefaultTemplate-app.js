@@ -4603,7 +4603,7 @@ var Constants = {
   WebXROptionalFeatures: ["local", "hand-tracking", "hit-test"]
 };
 var RuntimeOptions = {
-  webgl2: true,
+  webgl2: false,
   webgpu: true,
   physx: true,
   loader: false,
