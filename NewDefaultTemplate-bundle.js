@@ -9886,11 +9886,165 @@ __publicField(PlayerControls, "Properties", {
   headObject: Property.object()
 });
 
+// js/teleport-vr.js
+var tempOriginLocal = new Float32Array(3);
+var tempDirLocal = new Float32Array(3);
+var tempOriginWorld = new Float32Array(3);
+var tempDirWorld = new Float32Array(3);
+var tempEndPoint = new Float32Array(3);
+var tempMid = new Float32Array(3);
+var tempHeadPos = new Float32Array(3);
+var tempPlayerPos = new Float32Array(3);
+var FORWARD = new Float32Array([0, 0, -1]);
+var UP2 = new Float32Array([0, 1, 0]);
+var TeleportVr = class extends Component3 {
+  init() {
+    this._session = null;
+    this._rightSource = null;
+    this._wasPressed = false;
+    this._hasTarget = false;
+    this._targetPos = new Float32Array(3);
+    this._onInputSourcesChange = this.onInputSourcesChange.bind(this);
+  }
+  start() {
+    this._physx = this.object.getComponent("physx");
+    if (!this._physx) {
+      console.warn('[TP] physx no encontrado en "' + this.object.name + '".');
+    }
+    this.hideAimVisuals();
+    this.engine.onXRSessionStart.add(this.onXRSessionStart.bind(this));
+    this.engine.onXRSessionEnd.add(this.onXRSessionEnd.bind(this));
+  }
+  onXRSessionStart(session) {
+    this._session = session;
+    session.addEventListener("inputsourceschange", this._onInputSourcesChange);
+    this.onInputSourcesChange({ added: session.inputSources, removed: [] });
+  }
+  onXRSessionEnd() {
+    this._session = null;
+    this._rightSource = null;
+    this._hasTarget = false;
+    this.hideAimVisuals();
+  }
+  onInputSourcesChange(event) {
+    for (const src of event.removed) {
+      if (src.handedness === "right")
+        this._rightSource = null;
+    }
+    for (const src of event.added) {
+      if (src.handedness === "right")
+        this._rightSource = src;
+    }
+  }
+  update() {
+    if (!this._session || !this._rightSource || !this._rightSource.gamepad) {
+      this.hideAimVisuals();
+      return;
+    }
+    const trigger = this._rightSource.gamepad.buttons[0];
+    const pressed = !!trigger && trigger.pressed;
+    if (pressed) {
+      this.updateAim();
+    } else {
+      if (this._wasPressed)
+        this.doTeleport();
+      this.hideAimVisuals();
+    }
+    this._wasPressed = pressed;
+  }
+  updateAim() {
+    const frame = this.engine.xr.frame;
+    const refSpace = this.engine.xr.currentReferenceSpace;
+    if (!frame || !refSpace)
+      return;
+    const pose = frame.getPose(this._rightSource.targetRaySpace, refSpace);
+    if (!pose)
+      return;
+    const p = pose.transform.position;
+    const o = pose.transform.orientation;
+    tempOriginLocal[0] = p.x;
+    tempOriginLocal[1] = p.y;
+    tempOriginLocal[2] = p.z;
+    vec3_exports.transformQuat(tempDirLocal, FORWARD, [o.x, o.y, o.z, o.w]);
+    this.object.transformPointWorld(tempOriginWorld, tempOriginLocal);
+    this.object.transformVectorWorld(tempDirWorld, tempDirLocal);
+    vec3_exports.normalize(tempDirWorld, tempDirWorld);
+    const groupMask = 1 << this.floorGroup;
+    const hit = this.engine.physics.rayCast(
+      tempOriginWorld,
+      tempDirWorld,
+      groupMask,
+      this.maxDistance
+    );
+    this._hasTarget = hit.hitCount > 0;
+    if (this._hasTarget) {
+      const loc = hit.getLocations()[0];
+      this._targetPos[0] = loc[0];
+      this._targetPos[1] = loc[1];
+      this._targetPos[2] = loc[2];
+      tempEndPoint.set(this._targetPos);
+    } else {
+      vec3_exports.scaleAndAdd(tempEndPoint, tempOriginWorld, tempDirWorld, this.maxDistance);
+    }
+    if (this.rayObject) {
+      this.rayObject.active = true;
+      vec3_exports.add(tempMid, tempOriginWorld, tempEndPoint);
+      vec3_exports.scale(tempMid, tempMid, 0.5);
+      this.rayObject.setPositionWorld(tempMid);
+      this.rayObject.lookAt(tempEndPoint, UP2);
+      const dist2 = vec3_exports.distance(tempOriginWorld, tempEndPoint);
+      this.rayObject.setScalingLocal([this.rayThickness, this.rayThickness, dist2]);
+    }
+    if (this.indicatorObject) {
+      this.indicatorObject.active = this._hasTarget;
+      if (this._hasTarget)
+        this.indicatorObject.setPositionWorld(this._targetPos);
+    }
+  }
+  doTeleport() {
+    if (!this._hasTarget)
+      return;
+    this._hasTarget = false;
+    const headObj = this.head || this.object;
+    headObj.getPositionWorld(tempHeadPos);
+    this.object.getPositionWorld(tempPlayerPos);
+    const offsetX = tempHeadPos[0] - tempPlayerPos[0];
+    const offsetZ = tempHeadPos[2] - tempPlayerPos[2];
+    tempPlayerPos[0] = this._targetPos[0] - offsetX;
+    tempPlayerPos[1] = this._targetPos[1];
+    tempPlayerPos[2] = this._targetPos[2] - offsetZ;
+    this.object.setPositionWorld(tempPlayerPos);
+    if (this._physx)
+      this._physx.linearVelocity = [0, 0, 0];
+  }
+  hideAimVisuals() {
+    if (this.rayObject)
+      this.rayObject.active = false;
+    if (this.indicatorObject)
+      this.indicatorObject.active = false;
+  }
+  onDestroy() {
+    if (this._session) {
+      this._session.removeEventListener("inputsourceschange", this._onInputSourcesChange);
+    }
+  }
+};
+__publicField(TeleportVr, "TypeName", "teleport-vr");
+__publicField(TeleportVr, "Properties", {
+  head: { type: Type.Object },
+  indicatorObject: { type: Type.Object },
+  rayObject: { type: Type.Object },
+  rayThickness: { type: Type.Float, default: 0.01 },
+  floorGroup: { type: Type.Int, default: 0 },
+  maxDistance: { type: Type.Float, default: 10 }
+});
+
 // js/index.js
 function js_default(engine) {
   engine.registerComponent(MouseLookComponent);
   engine.registerComponent(MobileControls);
   engine.registerComponent(PlayerControls);
+  engine.registerComponent(TeleportVr);
 }
 export {
   js_default as default
